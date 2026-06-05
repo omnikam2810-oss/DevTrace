@@ -35,7 +35,7 @@ docker compose up -d postgres redis
 npm run dev
 ```
 
-The scaffold is intentionally dependency-light in source files, but the architecture is ready for the requested stack: React, TypeScript, Vite, Tailwind, shadcn/ui, TanStack Query, Recharts, React Flow, Zustand, Express, Prisma, Redis, BullMQ, Socket.IO, JWT, bcrypt, Zod, Docker, Nginx, GitHub Actions, and Gemini.
+The scaffold is intentionally dependency-light in source files, but the architecture is ready for the requested stack: React, TypeScript, Vite, Tailwind, shadcn/ui, TanStack Query, Recharts, React Flow, Zustand, Express, Prisma, Redis, BullMQ, Socket.IO, JWT, bcrypt, Zod, Docker, Nginx, GitHub Actions, and Gemini api.
 
 ## Primary Documents
 
