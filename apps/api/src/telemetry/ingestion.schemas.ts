@@ -63,7 +63,20 @@ export const traceBatchSchema = z.object({
   })).min(1).max(2000)
 });
 
+export const dependencyBatchSchema = z.object({
+  service: serviceIdentitySchema,
+  batchId: z.string().min(8).max(128),
+  dependencies: z.array(z.object({
+    target: serviceIdentitySchema,
+    protocol: z.string().max(40).optional(),
+    endpoint: z.string().max(240).optional(),
+    callCount: z.number().int().nonnegative().default(0),
+    errorRate: z.number().min(0).max(1).default(0),
+    avgLatencyMs: z.number().nonnegative().optional()
+  })).min(1).max(1000)
+});
+
 export type MetricsBatch = z.infer<typeof metricsBatchSchema>;
 export type LogBatch = z.infer<typeof logBatchSchema>;
 export type TraceBatch = z.infer<typeof traceBatchSchema>;
-
+export type DependencyBatch = z.infer<typeof dependencyBatchSchema>;

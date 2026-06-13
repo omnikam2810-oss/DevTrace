@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  dependencyBatchSchema,
   logBatchSchema,
   metricsBatchSchema,
   traceBatchSchema
@@ -52,6 +53,18 @@ export function createIngestionRouter({ queues }: Dependencies) {
     }
   });
 
+  router.post("/dependencies", async (req, res, next) => {
+    try {
+      const payload = dependencyBatchSchema.parse(req.body);
+      await queues.dependencies.add(payload.batchId, payload, {
+        removeOnComplete: 1000,
+        removeOnFail: 5000
+      });
+      res.status(202).json({ accepted: payload.dependencies.length });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   return router;
 }
-

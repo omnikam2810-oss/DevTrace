@@ -4,6 +4,8 @@ Base path: `/api/v1`
 
 All authenticated requests use `Authorization: Bearer <access_token>`. Agent ingest requests use `X-DevTrace-Key: <api_key>`.
 
+Local development currently runs in no-auth mode so the observability workflows can be used before identity is added.
+
 ## Authentication
 
 - `POST /auth/register`: create first organization admin or invite-accepted user.
@@ -43,10 +45,10 @@ API keys are shown only once at creation. The database stores `keyHash`.
 
 ## Telemetry Ingestion
 
-- `POST /ingest/heartbeat`
 - `POST /ingest/metrics`
 - `POST /ingest/logs`
 - `POST /ingest/traces`
+- `POST /ingest/dependencies`
 - `POST /ingest/dependencies`
 
 Example metrics payload:
@@ -76,6 +78,7 @@ Example metrics payload:
 
 ## Logs
 
+- `GET /logs?service=&level=&q=&take=`
 - `GET /projects/:projectId/logs?service=&environment=&level=&q=&from=&to=&cursor=`
 - `GET /projects/:projectId/logs/live-token`
 - `POST /projects/:projectId/logs/export`
@@ -89,6 +92,8 @@ Search examples:
 
 ## Traces
 
+- `GET /traces?status=&minDurationMs=&take=`
+- `GET /traces/:traceId`
 - `GET /projects/:projectId/traces?service=&status=&from=&to=&minDurationMs=`
 - `GET /traces/:traceId`
 - `GET /traces/:traceId/waterfall`
@@ -96,6 +101,7 @@ Search examples:
 
 ## Dashboard
 
+- `GET /dashboard/summary`
 - `GET /projects/:projectId/dashboard/overview`
 - `GET /projects/:projectId/dashboard/timeseries?metric=&from=&to=&step=`
 - `GET /projects/:projectId/dashboard/top-endpoints`
@@ -103,6 +109,8 @@ Search examples:
 
 ## Alerts
 
+- `GET /alerts`
+- `PATCH /alerts/:alertId/state`
 - `GET /projects/:projectId/alert-rules`
 - `POST /projects/:projectId/alert-rules`
 - `PATCH /alert-rules/:ruleId`
@@ -112,6 +120,9 @@ Search examples:
 
 ## Incidents
 
+- `GET /incidents`
+- `POST /incidents`
+- `PATCH /incidents/:incidentId`
 - `GET /projects/:projectId/incidents`
 - `POST /projects/:projectId/incidents`
 - `GET /incidents/:incidentId`
@@ -121,8 +132,14 @@ Search examples:
 
 ## Topology
 
+- `GET /topology`
 - `GET /projects/:projectId/topology`
 - `POST /projects/:projectId/topology/recompute`
+
+## Reports
+
+- `GET /reports`
+- `POST /reports`
 
 Response shape:
 
@@ -159,4 +176,3 @@ Server emits:
 - `alert.triggered`
 - `incident.updated`
 - `topology.updated`
-
