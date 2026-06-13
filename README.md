@@ -32,8 +32,14 @@ prisma/         PostgreSQL schema
 ```bash
 npm install
 docker compose up -d postgres redis
+npm run prisma:generate
+npm run prisma:migrate
 npm run dev
 ```
+
+Open the web console at `http://127.0.0.1:5173`. The API health check is available at `http://localhost:4000/api/v1/health`.
+
+For normal daily development, keep Docker Desktop running, confirm `devtrace-postgres` and `devtrace-redis` are healthy with `docker ps`, then run `npm run dev`.
 
 The scaffold is intentionally dependency-light in source files, but the architecture is ready for the requested stack: React, TypeScript, Vite, Tailwind, shadcn/ui, TanStack Query, Recharts, React Flow, Zustand, Express, Prisma, Redis, BullMQ, Socket.IO, JWT, bcrypt, Zod, Docker, Nginx, GitHub Actions, and Gemini api.
 
@@ -43,4 +49,3 @@ The scaffold is intentionally dependency-light in source files, but the architec
 - [API Documentation](docs/API_DOCUMENTATION.md)
 - [Implementation Roadmap](docs/IMPLEMENTATION_ROADMAP.md)
 - [UI/UX Wireframes](docs/UI_UX_WIREFRAMES.md)
-
