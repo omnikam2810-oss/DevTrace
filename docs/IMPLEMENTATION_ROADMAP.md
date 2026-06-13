@@ -1,5 +1,13 @@
 # DevTrace Implementation Roadmap
 
+## Current MVP Status
+
+- No-auth local mode is available for development and demos.
+- Telemetry ingestion accepts metrics, logs, traces, and dependencies.
+- Redis/BullMQ workers persist telemetry into PostgreSQL and update service health.
+- The React console includes overview, services, logs, traces, topology, alerts, incidents, and reports views.
+- Authentication, API key enforcement, Gemini analysis, scheduled reports, and production hardening remain future work.
+
 ## Phase 0: Foundation
 
 - Initialize monorepo, CI, Docker Compose, TypeScript configs, linting, formatting.
@@ -48,4 +56,3 @@
 ## Milestone Definition of Done
 
 - Feature has RBAC checks, tenant isolation, request validation, tests, audit events where applicable, API docs, UI loading/error/empty states, and telemetry about its own behavior.
-
