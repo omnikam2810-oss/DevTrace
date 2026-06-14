@@ -245,6 +245,18 @@ p {
   gap: 14px;
 }
 
+.serviceTileButton {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.serviceTileButton:hover {
+  border-color: #3b82f6;
+  background: #142033;
+}
+
 .serviceTile div:first-child {
   display: grid;
   gap: 4px;
@@ -319,6 +331,22 @@ p {
   color: #9fb1c7;
 }
 
+.serviceDetail {
+  display: grid;
+  gap: 12px;
+}
+
+.detailHeader {
+  border: 1px solid #1f2a38;
+  background: #111923;
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+}
+
 .panel {
   padding: 16px;
   min-width: 0;
@@ -357,6 +385,14 @@ td {
   padding: 12px 8px;
   border-top: 1px solid #1f2a38;
   color: #d8e3f2;
+}
+
+.clickRow {
+  cursor: pointer;
+}
+
+.clickRow:hover td {
+  background: #152033;
 }
 
 .pill {
@@ -443,6 +479,10 @@ td {
   }
 
   .filterBar {
+    grid-template-columns: 1fr;
+  }
+
+  .detailHeader {
     grid-template-columns: 1fr;
   }
 }
