@@ -28,6 +28,16 @@ input {
   font: inherit;
 }
 
+textarea {
+  border: 1px solid #263448;
+  border-radius: 6px;
+  background: #0f1720;
+  color: #e5eef9;
+  padding: 10px;
+  font: inherit;
+  resize: vertical;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 244px 1fr;
@@ -292,6 +302,85 @@ p {
   margin-bottom: 12px;
 }
 
+.sourcesLayout {
+  display: grid;
+  gap: 12px;
+}
+
+.sourceCards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.sourceCard {
+  border: 1px solid #1f2a38;
+  background: #111923;
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.sourceIcon {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #263448;
+  border-radius: 8px;
+  background: #172232;
+  display: grid;
+  place-items: center;
+  color: #9fb1c7;
+}
+
+.sourcePanels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sourceAction {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.commandBlock {
+  margin-top: 12px;
+  border: 1px solid #263448;
+  background: #0f1720;
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.commandBlock code {
+  color: #87efac;
+  overflow-wrap: anywhere;
+}
+
+.commandBlock span,
+.sourceCard p {
+  color: #9fb1c7;
+}
+
+.csvTools {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) auto;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.csvInput {
+  width: 100%;
+  min-height: 170px;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+}
+
 .topologyLayout {
   display: grid;
   grid-template-columns: minmax(280px, 0.9fr) 1.1fr;
@@ -548,7 +637,9 @@ td {
   .topbar,
   .grid,
   .tables,
-  .topologyLayout {
+  .topologyLayout,
+  .sourceCards,
+  .sourcePanels {
     grid-template-columns: 1fr;
     display: grid;
   }
@@ -567,7 +658,9 @@ td {
     min-width: 0;
   }
 
-  .filterBar {
+  .filterBar,
+  .sourceAction,
+  .csvTools {
     grid-template-columns: 1fr;
   }
 

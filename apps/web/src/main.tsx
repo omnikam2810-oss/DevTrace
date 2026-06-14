@@ -5,6 +5,8 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  Copy,
+  Database,
   FileText,
   GitBranch,
   Rocket,
@@ -12,6 +14,7 @@ import {
   Play,
   RadioTower,
   RefreshCw,
+  Send,
   Search,
   Server,
   ShieldCheck,
@@ -32,7 +35,7 @@ import {
 import "./styles.css";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
-const navItems = ["Overview", "Services", "Deployments", "Logs", "Traces", "Topology", "Alerts", "Incidents", "Reports"] as const;
+const navItems = ["Overview", "Sources", "Services", "Deployments", "Logs", "Traces", "Topology", "Alerts", "Incidents", "Reports"] as const;
 type View = typeof navItems[number];
 
 type DashboardSummary = {
@@ -124,6 +127,12 @@ type DeploymentRow = {
   metadata?: Record<string, unknown> | null;
   createdAt: string;
 };
+type SourceOption = {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+};
 type ServiceDependencyRow = {
   id: string;
   service: string;
@@ -174,6 +183,7 @@ function App() {
   const [topology, setTopology] = useState<Topology>({ nodes: [], edges: [] });
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
+  const [sources, setSources] = useState<SourceOption[]>([]);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [serviceDetail, setServiceDetail] = useState<ServiceDetail | null>(null);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
@@ -207,6 +217,7 @@ function App() {
       setIncidents(incidentData);
       setTopology(topologyData);
       setReports(reportData);
+      api<SourceOption[]>("/api/v1/sources").then(setSources).catch(() => setSources([]));
       setStatus("ready");
       setMessage("Live telemetry connected");
     } catch (error) {
@@ -344,6 +355,13 @@ function App() {
         </header>
 
         {activeView === "Overview" && <Overview summary={summary} chartSeries={chartSeries} onOpenService={(id) => void openServiceDetail(id)} />}
+        {activeView === "Sources" && (
+          <Sources
+            sources={sources}
+            onDemo={() => void sendDemoTelemetry()}
+            onRefresh={() => void loadAll()}
+          />
+        )}
         {activeView === "Services" && (
           <Services
             services={services}
@@ -442,6 +460,120 @@ function Overview({ summary, chartSeries, onOpenService }: {
         <LogTable logs={summary.logs} />
       </section>
     </>
+  );
+}
+
+function Sources({ sources, onDemo, onRefresh }: {
+  sources: SourceOption[];
+  onDemo: () => void;
+  onRefresh: () => void;
+}) {
+  const [agentSetup, setAgentSetup] = useState<{ command: string; steps: string[] } | null>(null);
+  const [webhookResult, setWebhookResult] = useState("");
+  const [csvType, setCsvType] = useState("services");
+  const [csvText, setCsvText] = useState(sampleCsv.services);
+  const [importResult, setImportResult] = useState("");
+
+  const loadAgentSetup = async () => {
+    setAgentSetup(await api<{ command: string; steps: string[] }>("/api/v1/sources/agent/setup"));
+  };
+
+  const sendWebhookDeployment = async () => {
+    const deployment = await api<DeploymentRow>("/api/v1/sources/webhook/deployment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serviceName: "checkout-api",
+        environment: "PRODUCTION",
+        version: `2.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 20)}`,
+        commitSha: crypto.randomUUID().slice(0, 8),
+        deployedBy: "webhook-demo",
+        metadata: { source: "sources-page" }
+      })
+    });
+    setWebhookResult(`Recorded ${deployment.service} ${deployment.version}`);
+    onRefresh();
+  };
+
+  const importCsv = async () => {
+    const result = await api<{ type: string; imported: number }>("/api/v1/sources/csv/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: csvType, csv: csvText })
+    });
+    setImportResult(`Imported ${result.imported} ${result.type} rows`);
+    onRefresh();
+  };
+
+  return (
+    <section className="sourcesLayout">
+      <div className="sourceCards">
+        {(sources.length > 0 ? sources : fallbackSources).map((source) => (
+          <article className="sourceCard" key={source.id}>
+            <div className="sourceIcon">{sourceIcon(source.id)}</div>
+            <div>
+              <h2>{source.name}</h2>
+              <p>{source.description}</p>
+            </div>
+            <span className="pill info">{source.status}</span>
+          </article>
+        ))}
+      </div>
+
+      <section className="sourcePanels">
+        <Panel title="Demo Data">
+          <div className="sourceAction">
+            <p>Populate the dashboard with realistic metrics, logs, traces, dependencies, alerts, incidents, and deployments.</p>
+            <button className="demoButton" onClick={onDemo}><Play size={17} /> Run Demo</button>
+          </div>
+        </Panel>
+
+        <Panel title="Node Agent">
+          <div className="sourceAction">
+            <p>Use this guided setup when a technical user can run one command in the app they want to monitor.</p>
+            <button className="demoButton" onClick={() => void loadAgentSetup()}><Copy size={17} /> Generate</button>
+          </div>
+          {agentSetup && (
+            <div className="commandBlock">
+              <code>{agentSetup.command}</code>
+              {agentSetup.steps.map((step) => <span key={step}>{step}</span>)}
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Deployment Webhook">
+          <div className="sourceAction">
+            <p>Use this input for CI/CD tools. Any tool that can send JSON can record a deployment.</p>
+            <button className="demoButton" onClick={() => void sendWebhookDeployment()}><Send size={17} /> Send Sample</button>
+          </div>
+          <div className="commandBlock">
+            <code>POST http://localhost:4000/api/v1/sources/webhook/deployment</code>
+            {webhookResult && <span>{webhookResult}</span>}
+          </div>
+        </Panel>
+
+        <Panel title="CSV Import">
+          <div className="csvTools">
+            <select
+              value={csvType}
+              onChange={(event) => {
+                setCsvType(event.target.value);
+                setCsvText(sampleCsv[event.target.value as keyof typeof sampleCsv]);
+              }}
+            >
+              <option value="services">Services</option>
+              <option value="deployments">Deployments</option>
+              <option value="incidents">Incidents</option>
+              <option value="logs">Logs</option>
+              <option value="metrics">Metrics</option>
+            </select>
+            <button className="demoButton" onClick={() => void importCsv()}><Database size={17} /> Import</button>
+          </div>
+          <textarea className="csvInput" value={csvText} onChange={(event) => setCsvText(event.target.value)} />
+          {importResult && <p>{importResult}</p>}
+        </Panel>
+      </section>
+    </section>
   );
 }
 
@@ -1137,6 +1269,34 @@ async function sendDemoBatch() {
 
 function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+const fallbackSources: SourceOption[] = [
+  { id: "demo", name: "Demo Data", description: "Populate DevTrace with sample telemetry.", status: "ready" },
+  { id: "agent", name: "Node Agent", description: "Generate a one-command setup guide.", status: "guide" },
+  { id: "webhook", name: "Webhook", description: "Record deployments from external tools.", status: "ready" },
+  { id: "csv", name: "CSV Import", description: "Import spreadsheet data.", status: "ready" }
+];
+
+const sampleCsv = {
+  services: "name,environment,version,owner,status,healthScore\ncatalog-api,PRODUCTION,1.3.0,Platform,HEALTHY,94",
+  deployments: "serviceName,environment,version,commitSha,deployedBy\ncatalog-api,PRODUCTION,1.3.1,abc1234,github-actions",
+  incidents: "title,description,severity,state,impactedServices\nCatalog latency regression,Catalog API latency crossed threshold,WARNING,OPEN,catalog-api",
+  logs: "serviceName,environment,timestamp,level,message,traceId\ncatalog-api,PRODUCTION,,WARN,Catalog query latency elevated,",
+  metrics: "serviceName,environment,timestamp,cpuPercent,memoryPercent,requestCount,errorCount,avgLatencyMs,throughputRpm\ncatalog-api,PRODUCTION,,72,68,240,6,420,380"
+};
+
+function sourceIcon(sourceId: string) {
+  if (sourceId === "demo") {
+    return <Play size={20} />;
+  }
+  if (sourceId === "agent") {
+    return <Server size={20} />;
+  }
+  if (sourceId === "webhook") {
+    return <Send size={20} />;
+  }
+  return <Database size={20} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

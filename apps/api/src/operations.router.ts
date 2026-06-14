@@ -22,8 +22,79 @@ const deploymentSchema = z.object({
   metadata: z.record(z.unknown()).optional()
 });
 
+const csvImportSchema = z.object({
+  type: z.enum(["services", "deployments", "incidents", "logs", "metrics"]),
+  csv: z.string().min(1)
+});
+
 export function createOperationsRouter() {
   const router = Router();
+
+  router.get("/sources", (_req, res) => {
+    res.json([
+      {
+        id: "demo",
+        name: "Demo Data",
+        description: "Populate DevTrace with realistic sample telemetry in one click.",
+        status: "ready"
+      },
+      {
+        id: "agent",
+        name: "Node Agent",
+        description: "Use one setup command to monitor a Node service.",
+        status: "guide"
+      },
+      {
+        id: "webhook",
+        name: "Webhook",
+        description: "Send deployments or custom events from CI/CD tools.",
+        status: "ready"
+      },
+      {
+        id: "csv",
+        name: "CSV Import",
+        description: "Import services, deployments, incidents, logs, or metrics from a spreadsheet.",
+        status: "ready"
+      }
+    ]);
+  });
+
+  router.get("/sources/agent/setup", (_req, res) => {
+    res.json({
+      command: "npx devtrace-agent setup --endpoint http://localhost:4000 --service checkout-api --env production",
+      env: {
+        DEVTRACE_ENDPOINT: "http://localhost:4000",
+        DEVTRACE_SERVICE: "checkout-api",
+        DEVTRACE_ENVIRONMENT: "PRODUCTION"
+      },
+      steps: [
+        "Run the command in the app you want to monitor.",
+        "Confirm the service name and environment.",
+        "Restart the app so the agent can begin sending telemetry."
+      ]
+    });
+  });
+
+  router.post("/sources/webhook/deployment", async (req, res, next) => {
+    try {
+      const body = deploymentSchema.parse(req.body);
+      const deployment = await createDeployment(body);
+      res.status(201).json(deployment);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/sources/csv/import", async (req, res, next) => {
+    try {
+      const body = csvImportSchema.parse(req.body);
+      const rows = parseCsv(body.csv);
+      const result = await importCsvRows(body.type, rows);
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.get("/services", async (_req, res, next) => {
     try {
@@ -601,76 +672,7 @@ export function createOperationsRouter() {
   router.post("/deployments", async (req, res, next) => {
     try {
       const body = deploymentSchema.parse(req.body);
-      const project = await ensureDefaultProject();
-      const service = await prisma.service.upsert({
-        where: {
-          projectId_name_environment: {
-            projectId: project.id,
-            name: body.serviceName,
-            environment: body.environment
-          }
-        },
-        update: {
-          version: body.version,
-          lastSeenAt: new Date()
-        },
-        create: {
-          projectId: project.id,
-          name: body.serviceName,
-          environment: body.environment,
-          version: body.version,
-          status: "OFFLINE",
-          healthScore: 0,
-          lastSeenAt: new Date()
-        }
-      });
-
-      const deployment = await prisma.deployment.create({
-        data: {
-          serviceId: service.id,
-          version: body.version,
-          commitSha: body.commitSha,
-          environment: body.environment,
-          deployedBy: body.deployedBy,
-          metadata: toJson(body.metadata)
-        }
-      });
-
-      const openIncidents = await prisma.incident.findMany({
-        where: {
-          state: { in: ["OPEN", "INVESTIGATING"] },
-          impactedServices: { array_contains: body.serviceName }
-        },
-        take: 10
-      });
-
-      await Promise.all(openIncidents.map((incident) => {
-        const timeline = Array.isArray(incident.timeline) ? incident.timeline : [];
-        return prisma.incident.update({
-          where: { id: incident.id },
-          data: {
-            timeline: [
-              ...timeline,
-              {
-                at: deployment.createdAt.toISOString(),
-                event: `Deployment ${body.version} recorded for ${body.serviceName}`
-              }
-            ]
-          }
-        });
-      }));
-
-      res.status(201).json({
-        id: deployment.id,
-        serviceId: service.id,
-        service: service.name,
-        version: deployment.version,
-        commitSha: deployment.commitSha,
-        environment: deployment.environment,
-        deployedBy: deployment.deployedBy,
-        metadata: deployment.metadata,
-        createdAt: deployment.createdAt
-      });
+      res.status(201).json(await createDeployment(body));
     } catch (error) {
       next(error);
     }
@@ -725,6 +727,538 @@ export function createOperationsRouter() {
 
 function toJson(value: Record<string, unknown> | undefined): Prisma.InputJsonObject | undefined {
   return value as Prisma.InputJsonObject | undefined;
+}
+
+async function createDeployment(body: z.infer<typeof deploymentSchema>) {
+  const project = await ensureDefaultProject();
+  const service = await prisma.service.upsert({
+    where: {
+      projectId_name_environment: {
+        projectId: project.id,
+        name: body.serviceName,
+        environment: body.environment
+      }
+    },
+    update: {
+      version: body.version,
+      lastSeenAt: new Date()
+    },
+    create: {
+      projectId: project.id,
+      name: body.serviceName,
+      environment: body.environment,
+      version: body.version,
+      status: "OFFLINE",
+      healthScore: 0,
+      lastSeenAt: new Date()
+    }
+  });
+
+  const deployment = await prisma.deployment.create({
+    data: {
+      serviceId: service.id,
+      version: body.version,
+      commitSha: body.commitSha,
+      environment: body.environment,
+      deployedBy: body.deployedBy,
+      metadata: toJson(body.metadata)
+    }
+  });
+
+  const openIncidents = await prisma.incident.findMany({
+    where: {
+      state: { in: ["OPEN", "INVESTIGATING"] },
+      impactedServices: { array_contains: body.serviceName }
+    },
+    take: 10
+  });
+
+  await Promise.all(openIncidents.map((incident) => {
+    const timeline = Array.isArray(incident.timeline) ? incident.timeline : [];
+    return prisma.incident.update({
+      where: { id: incident.id },
+      data: {
+        timeline: [
+          ...timeline,
+          {
+            at: deployment.createdAt.toISOString(),
+            event: `Deployment ${body.version} recorded for ${body.serviceName}`
+          }
+        ]
+      }
+    });
+  }));
+
+  return {
+    id: deployment.id,
+    serviceId: service.id,
+    service: service.name,
+    version: deployment.version,
+    commitSha: deployment.commitSha,
+    environment: deployment.environment,
+    deployedBy: deployment.deployedBy,
+    metadata: deployment.metadata,
+    createdAt: deployment.createdAt
+  };
+}
+
+async function importCsvRows(type: z.infer<typeof csvImportSchema>["type"], rows: Array<Record<string, string>>) {
+  const project = await ensureDefaultProject();
+  let imported = 0;
+
+  for (const row of rows) {
+    if (type === "services") {
+      const serviceName = serviceNameFromRow(row);
+      await prisma.service.upsert({
+        where: {
+          projectId_name_environment: {
+            projectId: project.id,
+            name: serviceName,
+            environment: parseEnvironment(csvValue(row, "environment", "env", "stage"))
+          }
+        },
+        update: {
+          version: csvValue(row, "version", "service_version", "release"),
+          owner: csvValue(row, "owner", "team", "maintainer"),
+          status: parseServiceStatus(csvValue(row, "status", "state")),
+          deploymentInfo: serviceMetadata(row),
+          lastSeenAt: new Date()
+        },
+        create: {
+          projectId: project.id,
+          name: serviceName,
+          environment: parseEnvironment(csvValue(row, "environment", "env", "stage")),
+          version: csvValue(row, "version", "service_version", "release"),
+          owner: csvValue(row, "owner", "team", "maintainer"),
+          status: parseServiceStatus(csvValue(row, "status", "state")),
+          healthScore: parseNumber(csvValue(row, "healthScore", "health_score", "score"), 0),
+          deploymentInfo: serviceMetadata(row),
+          lastSeenAt: new Date()
+        }
+      });
+      imported += 1;
+    }
+
+    if (type === "deployments") {
+      const service = await resolveDeploymentService(project.id, row);
+      await createDeployment({
+        serviceName: service.name,
+        environment: parseEnvironment(csvValue(row, "environment", "env", "stage")),
+        version: requiredAny(row, "version", "release", "tag", "build"),
+        commitSha: csvValue(row, "commitSha", "commit_sha", "commit", "sha"),
+        deployedBy: csvValue(row, "deployedBy", "deployed_by", "user", "author", "actor"),
+        metadata: {
+          source: "csv-import",
+          deploymentId: csvValue(row, "deployment_id", "deploymentId", "id"),
+          sourceStatus: csvValue(row, "status", "state", "result"),
+          deployedAt: csvValue(row, "deployed_at", "deployedAt", "timestamp", "time"),
+          extra: extraCsvMetadata(row, [
+            "service_id", "serviceId", "serviceName", "service_name", "name", "service",
+            "environment", "env", "stage", "version", "release", "tag", "build",
+            "commitSha", "commit_sha", "commit", "sha", "deployedBy", "deployed_by",
+            "user", "author", "actor", "deployment_id", "deploymentId", "id",
+            "status", "state", "result", "deployed_at", "deployedAt", "timestamp", "time"
+          ])
+        }
+      });
+      imported += 1;
+    }
+
+    if (type === "incidents") {
+      const title = requiredAny(row, "title", "incident", "summary", "name");
+      await prisma.incident.create({
+        data: {
+          projectId: project.id,
+          title,
+          description: csvValue(row, "description", "message", "details") || title,
+          severity: parseAlertSeverity(csvValue(row, "severity", "priority", "level")),
+          state: parseIncidentState(csvValue(row, "state", "status")),
+          impactedServices: splitList(csvValue(row, "impactedServices", "impacted_services", "services", "service")),
+          timeline: [{
+            at: parseDate(csvValue(row, "timestamp", "created_at", "createdAt", "time")).toISOString(),
+            event: "Incident imported from CSV",
+            extra: extraCsvMetadata(row, [
+              "title", "incident", "summary", "name", "description", "message", "details",
+              "severity", "priority", "level", "state", "status", "impactedServices",
+              "impacted_services", "services", "service", "timestamp", "created_at", "createdAt", "time"
+            ])
+          }]
+        }
+      });
+      imported += 1;
+    }
+
+    if (type === "logs") {
+      const service = await resolveCsvService(project.id, row);
+      await prisma.logEvent.create({
+        data: {
+          serviceId: service.id,
+          timestamp: parseDate(csvValue(row, "timestamp", "time", "created_at", "createdAt", "date")),
+          level: parseLogLevel(csvValue(row, "level", "severity", "status")),
+          message: requiredAny(row, "message", "msg", "body", "text", "event"),
+          traceId: csvValue(row, "traceId", "trace_id", "trace"),
+          spanId: csvValue(row, "spanId", "span_id", "span"),
+          attributes: {
+            source: "csv-import",
+            logId: csvValue(row, "log_id", "logId", "id"),
+            extra: extraCsvMetadata(row, [
+              "service_id", "serviceId", "serviceName", "service_name", "name", "service",
+              "environment", "env", "stage", "timestamp", "time", "created_at", "createdAt",
+              "date", "level", "severity", "status", "message", "msg", "body", "text",
+              "event", "traceId", "trace_id", "trace", "spanId", "span_id", "span", "log_id", "logId", "id"
+            ])
+          }
+        }
+      });
+      imported += 1;
+    }
+
+    if (type === "metrics") {
+      const service = await resolveCsvService(project.id, row);
+      await prisma.serviceMetric.create({
+        data: {
+          serviceId: service.id,
+          timestamp: parseDate(csvValue(row, "timestamp", "time", "created_at", "createdAt", "date")),
+          cpuPercent: parseOptionalNumber(csvValue(row, "cpuPercent", "cpu_percent", "cpu", "cpuUsage")),
+          memoryPercent: parseOptionalNumber(csvValue(row, "memoryPercent", "memory_percent", "memory", "mem", "memoryUsage")),
+          diskPercent: parseOptionalNumber(csvValue(row, "diskPercent", "disk_percent", "disk", "diskUsage")),
+          requestCount: parseNumber(csvValue(row, "requestCount", "request_count", "requests", "req_count"), 0),
+          errorCount: parseNumber(csvValue(row, "errorCount", "error_count", "errors", "err_count"), 0),
+          avgLatencyMs: parseOptionalNumber(csvValue(row, "avgLatencyMs", "avg_latency_ms", "latency", "latency_ms", "duration_ms")),
+          throughputRpm: parseOptionalNumber(csvValue(row, "throughputRpm", "throughput_rpm", "throughput", "rpm"))
+        }
+      });
+      imported += 1;
+    }
+  }
+
+  return { type, imported };
+}
+
+async function resolveCsvService(projectId: string, row: Record<string, string>) {
+  const serviceId = csvValue(row, "service_id", "serviceId", "service id", "svc_id", "svcId");
+  if (serviceId) {
+    const services = await prisma.service.findMany({ where: { projectId } });
+    const matched = services.find((service) => {
+      const info = service.deploymentInfo;
+      return Boolean(
+        info &&
+        typeof info === "object" &&
+        !Array.isArray(info) &&
+        "serviceId" in info &&
+        info.serviceId === serviceId
+      );
+    });
+
+    if (matched) {
+      return matched;
+    }
+  }
+
+  const serviceName = csvValue(row, "serviceName", "service_name", "service", "name", "app", "application");
+  if (!serviceName?.trim() && serviceId) {
+    return prisma.service.upsert({
+      where: {
+        projectId_name_environment: {
+          projectId,
+          name: serviceId,
+          environment: parseEnvironment(csvValue(row, "environment", "env", "stage"))
+        }
+      },
+      update: {
+        lastSeenAt: new Date()
+      },
+      create: {
+        projectId,
+        name: serviceId,
+        environment: parseEnvironment(csvValue(row, "environment", "env", "stage")),
+        status: "HEALTHY",
+        healthScore: 100,
+        deploymentInfo: { serviceId },
+        lastSeenAt: new Date()
+      }
+    });
+  }
+
+  return prisma.service.upsert({
+    where: {
+      projectId_name_environment: {
+        projectId,
+        name: requiredServiceName(row),
+        environment: parseEnvironment(csvValue(row, "environment", "env", "stage"))
+      }
+    },
+    update: {
+      lastSeenAt: new Date()
+    },
+    create: {
+      projectId,
+      name: requiredServiceName(row),
+      environment: parseEnvironment(csvValue(row, "environment", "env", "stage")),
+      status: "HEALTHY",
+      healthScore: 100,
+      lastSeenAt: new Date()
+    }
+  });
+}
+
+function requiredServiceName(row: Record<string, string>) {
+  const value = csvValue(row, "serviceName", "service_name", "service", "name", "app", "application");
+  if (!value?.trim()) {
+    throw new Error("CSV row is missing serviceName, service_name, name, or service_id");
+  }
+  return value.trim();
+}
+
+async function resolveDeploymentService(projectId: string, row: Record<string, string>) {
+  const serviceId = csvValue(row, "service_id", "serviceId", "service id", "svc_id", "svcId");
+  if (serviceId) {
+    const services = await prisma.service.findMany({ where: { projectId } });
+    const matched = services.find((service) => {
+      const info = service.deploymentInfo;
+      return Boolean(
+        info &&
+        typeof info === "object" &&
+        !Array.isArray(info) &&
+        "serviceId" in info &&
+        info.serviceId === serviceId
+      );
+    });
+
+    if (matched) {
+      return matched;
+    }
+  }
+
+  const name = csvValue(row, "serviceName", "service_name", "service", "name", "app", "application");
+  if (name?.trim()) {
+    return prisma.service.upsert({
+      where: {
+        projectId_name_environment: {
+          projectId,
+          name: name.trim(),
+          environment: parseEnvironment(csvValue(row, "environment", "env", "stage"))
+        }
+      },
+      update: { lastSeenAt: new Date() },
+      create: {
+        projectId,
+        name: name.trim(),
+        environment: parseEnvironment(row.environment),
+        status: "HEALTHY",
+        healthScore: 100,
+        lastSeenAt: new Date()
+      }
+    });
+  }
+
+  if (serviceId) {
+    return prisma.service.upsert({
+      where: {
+        projectId_name_environment: {
+          projectId,
+          name: serviceId,
+          environment: parseEnvironment(csvValue(row, "environment", "env", "stage"))
+        }
+      },
+      update: { lastSeenAt: new Date() },
+      create: {
+        projectId,
+        name: serviceId,
+        environment: parseEnvironment(csvValue(row, "environment", "env", "stage")),
+        status: "HEALTHY",
+        healthScore: 100,
+        deploymentInfo: { serviceId },
+        lastSeenAt: new Date()
+      }
+    });
+  }
+
+  throw new Error("CSV row is missing serviceName, service_name, name, or service_id");
+}
+
+function parseCsv(input: string) {
+  const rows = input.trim().split(/\r?\n/).filter(Boolean).map(parseCsvLine);
+  const headers = rows.shift();
+  if (!headers || headers.length === 0) {
+    throw new Error("CSV must include a header row");
+  }
+
+  return rows.map((row) => Object.fromEntries(headers.map((header, index) => [header.trim(), row[index]?.trim() ?? ""])));
+}
+
+function parseCsvLine(line: string) {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === "\"" && next === "\"") {
+      current += "\"";
+      index += 1;
+      continue;
+    }
+
+    if (char === "\"") {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values;
+}
+
+function required(row: Record<string, string>, key: string) {
+  const value = row[key]?.trim();
+  if (!value) {
+    throw new Error(`CSV row is missing ${key}`);
+  }
+  return value;
+}
+
+function requiredAny(row: Record<string, string>, ...keys: string[]) {
+  const value = csvValue(row, ...keys);
+  if (!value) {
+    throw new Error(`CSV row is missing one of: ${keys.join(", ")}`);
+  }
+  return value;
+}
+
+function serviceNameFromRow(row: Record<string, string>) {
+  const value = csvValue(row, "name", "serviceName", "service_name", "service", "app", "application");
+  if (!value?.trim()) {
+    throw new Error("CSV row is missing name, serviceName, service_name, or service");
+  }
+  return value.trim();
+}
+
+function serviceMetadata(row: Record<string, string>): Prisma.InputJsonObject | undefined {
+  const metadata = {
+    serviceId: csvValue(row, "service_id", "serviceId", "service id", "svc_id", "svcId"),
+    language: csvValue(row, "language", "lang", "runtime"),
+    framework: csvValue(row, "framework", "platform"),
+    extra: extraCsvMetadata(row, [
+      "name", "serviceName", "service_name", "service", "app", "application",
+      "environment", "env", "stage", "version", "service_version", "release",
+      "owner", "team", "maintainer", "status", "state", "healthScore",
+      "health_score", "score", "service_id", "serviceId", "service id",
+      "svc_id", "svcId", "language", "lang", "runtime", "framework", "platform"
+    ])
+  };
+
+  if (!metadata.serviceId && !metadata.language && !metadata.framework && !metadata.extra) {
+    return undefined;
+  }
+
+  return metadata;
+}
+
+function csvValue(row: Record<string, string>, ...keys: string[]) {
+  const normalizedAliases = new Set(keys.map(normalizeCsvKey));
+  for (const [key, value] of Object.entries(row)) {
+    if (normalizedAliases.has(normalizeCsvKey(key)) && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function extraCsvMetadata(row: Record<string, string>, knownKeys: string[]) {
+  const known = new Set(knownKeys.map(normalizeCsvKey));
+  const extra = Object.fromEntries(
+    Object.entries(row)
+      .filter(([key, value]) => !known.has(normalizeCsvKey(key)) && value.trim())
+      .map(([key, value]) => [key, value.trim()])
+  );
+
+  return Object.keys(extra).length > 0 ? extra : undefined;
+}
+
+function normalizeCsvKey(key: string) {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function splitList(value: string | undefined) {
+  if (!value?.trim()) {
+    return [];
+  }
+  return value.split(/[|;,]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function emptyToUndefined(value: string | undefined) {
+  return value?.trim() ? value.trim() : undefined;
+}
+
+function parseDate(value: string | undefined) {
+  return value?.trim() ? new Date(value) : new Date();
+}
+
+function parseNumber(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseOptionalNumber(value: string | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseEnvironment(value: string | undefined) {
+  const normalized = (value || "PRODUCTION").toUpperCase();
+  if (["DEVELOPMENT", "TESTING", "STAGING", "PRODUCTION"].includes(normalized)) {
+    return normalized as "DEVELOPMENT" | "TESTING" | "STAGING" | "PRODUCTION";
+  }
+  return "PRODUCTION";
+}
+
+function parseServiceStatus(value: string | undefined) {
+  const normalized = (value || "HEALTHY").toUpperCase();
+  if (normalized === "ACTIVE") {
+    return "HEALTHY";
+  }
+  if (normalized === "INACTIVE") {
+    return "OFFLINE";
+  }
+  if (["HEALTHY", "WARNING", "DEGRADED", "CRITICAL", "OFFLINE"].includes(normalized)) {
+    return normalized as "HEALTHY" | "WARNING" | "DEGRADED" | "CRITICAL" | "OFFLINE";
+  }
+  return "HEALTHY";
+}
+
+function parseLogLevel(value: string | undefined) {
+  const normalized = (value || "INFO").toUpperCase();
+  if (["DEBUG", "INFO", "WARN", "ERROR"].includes(normalized)) {
+    return normalized as "DEBUG" | "INFO" | "WARN" | "ERROR";
+  }
+  return "INFO";
+}
+
+function parseAlertSeverity(value: string | undefined) {
+  const normalized = (value || "WARNING").toUpperCase();
+  if (["INFO", "WARNING", "CRITICAL"].includes(normalized)) {
+    return normalized as "INFO" | "WARNING" | "CRITICAL";
+  }
+  return "WARNING";
+}
+
+function parseIncidentState(value: string | undefined) {
+  const normalized = (value || "OPEN").toUpperCase();
+  if (["OPEN", "INVESTIGATING", "MITIGATED", "RESOLVED", "CLOSED"].includes(normalized)) {
+    return normalized as "OPEN" | "INVESTIGATING" | "MITIGATED" | "RESOLVED" | "CLOSED";
+  }
+  return "OPEN";
 }
 
 function asStringArray(value: Prisma.JsonValue | null): string[] {
