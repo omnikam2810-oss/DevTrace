@@ -89,6 +89,25 @@ type IncidentRow = {
   createdAt?: string;
   timeline?: unknown;
 };
+type IncidentTimelineEvent = {
+  id: string;
+  timestamp: string;
+  type: string;
+  title: string;
+  description: string;
+  severity: string;
+  service?: string;
+};
+type IncidentTimelineDetail = {
+  incident: IncidentRow & {
+    impactedServices: string[];
+    rootCause?: string | null;
+    resolutionNotes?: string | null;
+    updatedAt?: string;
+  };
+  services: Array<{ id: string; name: string; status: string; healthScore: number }>;
+  timeline: IncidentTimelineEvent[];
+};
 type Topology = {
   nodes: Array<{ id: string; label: string; status: string; healthScore: number; latency: number }>;
   edges: Array<{ id: string; source: string; target: string; protocol?: string | null; endpoint?: string | null; callCount: number; errorRate: number; avgLatencyMs?: number | null }>;
@@ -157,6 +176,8 @@ function App() {
   const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [serviceDetail, setServiceDetail] = useState<ServiceDetail | null>(null);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [incidentDetail, setIncidentDetail] = useState<IncidentTimelineDetail | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("Loading live telemetry");
   const [isSendingDemo, setIsSendingDemo] = useState(false);
@@ -208,6 +229,20 @@ function App() {
     }
   }, []);
 
+  const openIncidentDetail = useCallback(async (incidentId: string) => {
+    try {
+      setSelectedIncidentId(incidentId);
+      setActiveView("Incidents");
+      setMessage("Loading incident timeline");
+      setIncidentDetail(await api<IncidentTimelineDetail>(`/api/v1/incidents/${incidentId}/timeline`));
+      setStatus("ready");
+      setMessage("Incident timeline loaded");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "Unable to load incident timeline");
+    }
+  }, []);
+
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
@@ -218,6 +253,9 @@ function App() {
       void loadAll();
       if (selectedServiceId) {
         void openServiceDetail(selectedServiceId);
+      }
+      if (selectedIncidentId) {
+        void openIncidentDetail(selectedIncidentId);
       }
     };
     for (const eventName of [
@@ -236,7 +274,7 @@ function App() {
     return () => {
       socket.disconnect();
     };
-  }, [loadAll, openServiceDetail, selectedServiceId]);
+  }, [loadAll, openIncidentDetail, openServiceDetail, selectedIncidentId, selectedServiceId]);
 
   const sendDemoTelemetry = async () => {
     setIsSendingDemo(true);
@@ -331,7 +369,19 @@ function App() {
         {activeView === "Traces" && <Traces traces={traces} />}
         {activeView === "Topology" && <TopologyView topology={topology} />}
         {activeView === "Alerts" && <Alerts alerts={alerts} onChange={loadAll} />}
-        {activeView === "Incidents" && <Incidents incidents={incidents} onChange={loadAll} />}
+        {activeView === "Incidents" && (
+          <Incidents
+            incidents={incidents}
+            selectedIncidentId={selectedIncidentId}
+            detail={incidentDetail}
+            onOpen={(id) => void openIncidentDetail(id)}
+            onChange={loadAll}
+            onBack={() => {
+              setSelectedIncidentId(null);
+              setIncidentDetail(null);
+            }}
+          />
+        )}
         {activeView === "Reports" && <Reports reports={reports} onCreate={() => void createReport()} />}
       </section>
     </main>
@@ -691,7 +741,18 @@ function Alerts({ alerts, onChange }: { alerts: AlertRow[]; onChange: () => Prom
   );
 }
 
-function Incidents({ incidents, onChange }: { incidents: IncidentRow[]; onChange: () => Promise<void> }) {
+function Incidents({ incidents, selectedIncidentId, detail, onOpen, onChange, onBack }: {
+  incidents: IncidentRow[];
+  selectedIncidentId: string | null;
+  detail: IncidentTimelineDetail | null;
+  onOpen: (incidentId: string) => void;
+  onChange: () => Promise<void>;
+  onBack: () => void;
+}) {
+  if (selectedIncidentId) {
+    return <IncidentDetailView detail={detail} onBack={onBack} />;
+  }
+
   const updateState = async (incidentId: string, state: string) => {
     await api(`/api/v1/incidents/${incidentId}`, {
       method: "PATCH",
@@ -706,13 +767,17 @@ function Incidents({ incidents, onChange }: { incidents: IncidentRow[]; onChange
       <table>
         <tbody>
           {incidents.map((incident) => (
-            <tr key={incident.id}>
+            <tr className="clickRow" key={incident.id} onClick={() => onOpen(incident.id)}>
               <td><span className={`pill ${incident.severity.toLowerCase()}`}>{incident.severity}</span></td>
               <td>{incident.title}</td>
               <td>{incident.state}</td>
               <td>{formatTime(incident.createdAt)}</td>
               <td>
-                <select value={incident.state} onChange={(event) => void updateState(incident.id, event.target.value)}>
+                <select
+                  value={incident.state}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => void updateState(incident.id, event.target.value)}
+                >
                   {["OPEN", "INVESTIGATING", "MITIGATED", "RESOLVED", "CLOSED"].map((state) => (
                     <option key={state} value={state}>{state}</option>
                   ))}
@@ -724,6 +789,80 @@ function Incidents({ incidents, onChange }: { incidents: IncidentRow[]; onChange
         </tbody>
       </table>
     </Panel>
+  );
+}
+
+function IncidentDetailView({ detail, onBack }: { detail: IncidentTimelineDetail | null; onBack: () => void }) {
+  if (!detail) {
+    return <EmptyState title="Loading incident timeline" text="Collecting alerts, deployments, logs, traces, and metrics." />;
+  }
+
+  return (
+    <section className="incidentDetail">
+      <div className="detailHeader">
+        <button className="demoButton" onClick={onBack}>Back</button>
+        <div>
+          <h2>{detail.incident.title}</h2>
+          <p>{detail.incident.state} / {detail.incident.severity} / opened {formatDateTime(detail.incident.createdAt)}</p>
+        </div>
+        <span className={`pill ${detail.incident.severity.toLowerCase()}`}>{detail.incident.severity}</span>
+      </div>
+
+      <section className="kpis">
+        <Metric icon={<Siren />} label="Timeline Events" value={String(detail.timeline.length)} tone="warn" />
+        <Metric icon={<Server />} label="Services" value={String(detail.services.length)} tone="neutral" />
+        <Metric icon={<Bell />} label="State" value={detail.incident.state} tone="neutral" />
+        <Metric icon={<AlertTriangle />} label="Severity" value={detail.incident.severity} tone="bad" />
+        <Metric icon={<GitBranch />} label="Evidence" value={String(detail.timeline.filter((event) => event.type !== "incident").length)} tone="neutral" />
+      </section>
+
+      <section className="tables">
+        <Panel title="Impacted Services">
+          <table>
+            <tbody>
+              {detail.services.map((service) => (
+                <tr key={service.id}>
+                  <td>{service.name}</td>
+                  <td><span className={`pill ${service.status.toLowerCase()}`}>{service.status}</span></td>
+                  <td>score {service.healthScore}</td>
+                </tr>
+              ))}
+              {detail.services.length === 0 && <EmptyRow label="No related services found" />}
+            </tbody>
+          </table>
+        </Panel>
+        <Panel title="Incident Notes">
+          <div className="noteBlock">
+            <strong>Description</strong>
+            <span>{detail.incident.description ?? "No description"}</span>
+            <strong>Root cause</strong>
+            <span>{detail.incident.rootCause ?? "Not recorded"}</span>
+            <strong>Resolution</strong>
+            <span>{detail.incident.resolutionNotes ?? "Not recorded"}</span>
+          </div>
+        </Panel>
+      </section>
+
+      <Panel title="Evidence Timeline">
+        <ol className="timeline">
+          {detail.timeline.map((event) => (
+            <li className={`timelineItem ${event.type}`} key={event.id}>
+              <div className="timelineMarker" />
+              <div className="timelineContent">
+                <div className="timelineTopline">
+                  <span className={`pill ${event.severity.toLowerCase()}`}>{event.type}</span>
+                  <strong>{event.title}</strong>
+                  <time>{formatDateTime(event.timestamp)}</time>
+                </div>
+                <p>{event.description}</p>
+                {event.service && <small>{event.service}</small>}
+              </div>
+            </li>
+          ))}
+          {detail.timeline.length === 0 && <li className="mutedCell">No timeline evidence found</li>}
+        </ol>
+      </Panel>
+    </section>
   );
 }
 

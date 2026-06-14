@@ -326,6 +326,155 @@ export function createOperationsRouter() {
     }
   });
 
+  router.get("/incidents/:incidentId/timeline", async (req, res, next) => {
+    try {
+      const incident = await prisma.incident.findUnique({
+        where: { id: req.params.incidentId },
+        include: { alerts: true }
+      });
+
+      if (!incident) {
+        res.status(404).json({ error: "Incident not found" });
+        return;
+      }
+
+      const impactedNames = asStringArray(incident.impactedServices);
+      const alertServiceIds = incident.alerts
+        .map((alert) => alert.serviceId)
+        .filter((serviceId): serviceId is string => Boolean(serviceId));
+
+      const serviceFilters = [
+        alertServiceIds.length > 0 ? { id: { in: alertServiceIds } } : undefined,
+        impactedNames.length > 0 ? { name: { in: impactedNames } } : undefined
+      ].filter((filter): filter is { id: { in: string[] } } | { name: { in: string[] } } => Boolean(filter));
+
+      const services = serviceFilters.length > 0
+        ? await prisma.service.findMany({ where: { OR: serviceFilters } })
+        : [];
+      const serviceIds = services.map((service) => service.id);
+
+      const [deployments, logs, spans, metrics] = serviceIds.length > 0
+        ? await Promise.all([
+          prisma.deployment.findMany({
+            where: { serviceId: { in: serviceIds } },
+            include: { service: true },
+            orderBy: { createdAt: "desc" },
+            take: 25
+          }),
+          prisma.logEvent.findMany({
+            where: {
+              serviceId: { in: serviceIds },
+              level: { in: ["WARN", "ERROR"] }
+            },
+            include: { service: true },
+            orderBy: { timestamp: "desc" },
+            take: 25
+          }),
+          prisma.span.findMany({
+            where: {
+              serviceId: { in: serviceIds },
+              OR: [
+                { status: { not: "OK" } },
+                { durationMs: { gte: 500 } }
+              ]
+            },
+            include: { service: true, trace: true },
+            orderBy: { startedAt: "desc" },
+            take: 25
+          }),
+          prisma.serviceMetric.findMany({
+            where: { serviceId: { in: serviceIds } },
+            include: { service: true },
+            orderBy: { timestamp: "desc" },
+            take: 50
+          })
+        ])
+        : [[], [], [], []] as const;
+
+      const timeline = [
+        {
+          id: `${incident.id}-created`,
+          timestamp: incident.createdAt,
+          type: "incident",
+          title: "Incident opened",
+          description: incident.description,
+          severity: incident.severity,
+          service: impactedNames.join(", ") || undefined
+        },
+        ...timelineEntries(incident.timeline).map((entry, index) => ({
+          id: `${incident.id}-timeline-${index}`,
+          timestamp: entry.at,
+          type: "incident",
+          title: entry.event,
+          description: "Incident timeline entry",
+          severity: incident.severity,
+          service: impactedNames.join(", ") || undefined
+        })),
+        ...incident.alerts.map((alert) => ({
+          id: alert.id,
+          timestamp: alert.triggeredAt,
+          type: "alert",
+          title: alert.title,
+          description: alert.description,
+          severity: alert.severity,
+          service: services.find((service) => service.id === alert.serviceId)?.name
+        })),
+        ...deployments.map((deployment) => ({
+          id: deployment.id,
+          timestamp: deployment.createdAt,
+          type: "deployment",
+          title: `Deployment ${deployment.version}`,
+          description: deployment.commitSha ? `Commit ${deployment.commitSha}` : "Deployment recorded",
+          severity: "INFO",
+          service: deployment.service.name
+        })),
+        ...logs.map((log) => ({
+          id: log.id,
+          timestamp: log.timestamp,
+          type: "log",
+          title: `${log.level}: ${log.message}`,
+          description: log.traceId ? `Trace ${log.traceId}` : "Log evidence",
+          severity: log.level === "ERROR" ? "CRITICAL" : "WARNING",
+          service: log.service.name
+        })),
+        ...spans.map((span) => ({
+          id: span.id,
+          timestamp: span.startedAt,
+          type: "trace",
+          title: `${span.name} ${span.durationMs.toFixed(1)} ms`,
+          description: `Trace ${span.traceId} / ${span.status}`,
+          severity: span.status === "OK" ? "WARNING" : "CRITICAL",
+          service: span.service.name
+        })),
+        ...metrics.flatMap((metric) => metricEvidence(metric))
+      ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+      res.json({
+        incident: {
+          id: incident.id,
+          title: incident.title,
+          description: incident.description,
+          severity: incident.severity,
+          state: incident.state,
+          createdAt: incident.createdAt,
+          updatedAt: incident.updatedAt,
+          impactedServices: impactedNames,
+          rootCause: incident.rootCause,
+          resolutionNotes: incident.resolutionNotes
+        },
+        services: services.map((service) => ({
+          id: service.id,
+          name: service.name,
+          status: service.status,
+          healthScore: service.healthScore
+        })),
+        timeline
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/incidents", async (req, res, next) => {
     try {
       const project = await ensureDefaultProject();
@@ -576,4 +725,90 @@ export function createOperationsRouter() {
 
 function toJson(value: Record<string, unknown> | undefined): Prisma.InputJsonObject | undefined {
   return value as Prisma.InputJsonObject | undefined;
+}
+
+function asStringArray(value: Prisma.JsonValue | null): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function timelineEntries(value: Prisma.JsonValue): Array<{ at: Date; event: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return [];
+    }
+
+    const record = entry as Record<string, unknown>;
+    if (typeof record.at !== "string" || typeof record.event !== "string") {
+      return [];
+    }
+
+    return [{ at: new Date(record.at), event: record.event }];
+  });
+}
+
+function metricEvidence(metric: {
+  id: string;
+  timestamp: Date;
+  cpuPercent: number | null;
+  memoryPercent: number | null;
+  requestCount: number;
+  errorCount: number;
+  avgLatencyMs: number | null;
+  service: { name: string };
+}) {
+  const events: Array<{
+    id: string;
+    timestamp: Date;
+    type: string;
+    title: string;
+    description: string;
+    severity: string;
+    service: string;
+  }> = [];
+
+  const errorRate = metric.requestCount > 0 ? metric.errorCount / metric.requestCount : 0;
+  if ((metric.avgLatencyMs ?? 0) >= 500) {
+    events.push({
+      id: `${metric.id}-latency`,
+      timestamp: metric.timestamp,
+      type: "metric",
+      title: `Latency crossed ${metric.avgLatencyMs} ms`,
+      description: `${metric.requestCount} requests in sample`,
+      severity: "WARNING",
+      service: metric.service.name
+    });
+  }
+
+  if (errorRate >= 0.05) {
+    events.push({
+      id: `${metric.id}-errors`,
+      timestamp: metric.timestamp,
+      type: "metric",
+      title: `Error rate reached ${(errorRate * 100).toFixed(2)}%`,
+      description: `${metric.errorCount} errors from ${metric.requestCount} requests`,
+      severity: "CRITICAL",
+      service: metric.service.name
+    });
+  }
+
+  if ((metric.cpuPercent ?? 0) >= 85 || (metric.memoryPercent ?? 0) >= 85) {
+    events.push({
+      id: `${metric.id}-resource`,
+      timestamp: metric.timestamp,
+      type: "metric",
+      title: `Resource pressure CPU ${metric.cpuPercent ?? 0}% / memory ${metric.memoryPercent ?? 0}%`,
+      description: "Resource threshold crossed",
+      severity: "WARNING",
+      service: metric.service.name
+    });
+  }
+
+  return events;
 }
