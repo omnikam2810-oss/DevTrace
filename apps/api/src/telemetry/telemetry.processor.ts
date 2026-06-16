@@ -5,7 +5,7 @@ import { prisma, ensureDefaultProject } from "../db.js";
 import { publishRealtime } from "../realtime.js";
 import { calculateHealthScore } from "./health-score.js";
 import type { DependencyBatch, LogBatch, MetricsBatch, TraceBatch } from "./ingestion.schemas.js";
-import { createRedisConnection } from "./telemetry.queues.js";
+import { createRedisConnection, reportRedisError } from "./telemetry.queues.js";
 
 type TelemetryWorker = Worker;
 
@@ -19,6 +19,10 @@ export function startTelemetryProcessors(redisUrl: string) {
   ];
 
   for (const worker of workers) {
+    worker.on("error", (error) => {
+      reportRedisError(`worker:${worker.name}`, redisUrl, error);
+    });
+
     worker.on("failed", (job, error) => {
       console.error(`Telemetry job failed: ${job?.queueName ?? "unknown"} ${job?.id ?? "unknown"}`, error);
     });

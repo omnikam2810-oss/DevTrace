@@ -2,6 +2,8 @@ import { Queue } from "bullmq";
 
 export type TelemetryQueues = ReturnType<typeof createTelemetryQueues>;
 
+const reportedRedisErrors = new Set<string>();
+
 export function createRedisConnection(redisUrl: string) {
   const url = new URL(redisUrl);
   return {
@@ -14,8 +16,7 @@ export function createRedisConnection(redisUrl: string) {
 
 export function createTelemetryQueues(redisUrl: string) {
   const connection = createRedisConnection(redisUrl);
-
-  return {
+  const queues = {
     metrics: new Queue("metrics.ingest", { connection }),
     logs: new Queue("logs.ingest", { connection }),
     traces: new Queue("traces.ingest", { connection }),
@@ -23,4 +24,24 @@ export function createTelemetryQueues(redisUrl: string) {
     alerts: new Queue("alerts.evaluate", { connection }),
     realtime: new Queue("realtime.publish", { connection })
   };
+
+  for (const [name, queue] of Object.entries(queues)) {
+    queue.on("error", (error) => reportRedisError(`queue:${name}`, redisUrl, error));
+  }
+
+  return queues;
+}
+
+export function reportRedisError(source: string, redisUrl: string, error: Error) {
+  const key = `${source}:${error.message}`;
+
+  if (reportedRedisErrors.has(key)) {
+    return;
+  }
+
+  reportedRedisErrors.add(key);
+  console.error(
+    `[redis] ${source} could not connect to ${redisUrl}: ${error.message}. ` +
+      "Start Redis with `docker compose up -d redis` or update REDIS_URL."
+  );
 }
