@@ -5,16 +5,19 @@ import {
   metricsBatchSchema,
   traceBatchSchema
 } from "./ingestion.schemas.js";
+import { createIngestAuth } from "./ingest-auth.js";
 import type { TelemetryQueues } from "./telemetry.queues.js";
 
 type Dependencies = {
+  agentSecret?: string;
   queues: TelemetryQueues;
 };
 
-export function createIngestionRouter({ queues }: Dependencies) {
+export function createIngestionRouter({ agentSecret, queues }: Dependencies) {
   const router = Router();
+  const requireIngestKey = createIngestAuth({ agentSecret });
 
-  router.post("/metrics", async (req, res, next) => {
+  router.post("/metrics", requireIngestKey, async (req, res, next) => {
     try {
       const payload = metricsBatchSchema.parse(req.body);
       await queues.metrics.add(payload.batchId, payload, {
@@ -27,7 +30,7 @@ export function createIngestionRouter({ queues }: Dependencies) {
     }
   });
 
-  router.post("/logs", async (req, res, next) => {
+  router.post("/logs", requireIngestKey, async (req, res, next) => {
     try {
       const payload = logBatchSchema.parse(req.body);
       await queues.logs.add(payload.batchId, payload, {
@@ -40,7 +43,7 @@ export function createIngestionRouter({ queues }: Dependencies) {
     }
   });
 
-  router.post("/traces", async (req, res, next) => {
+  router.post("/traces", requireIngestKey, async (req, res, next) => {
     try {
       const payload = traceBatchSchema.parse(req.body);
       await queues.traces.add(payload.batchId, payload, {
@@ -53,7 +56,7 @@ export function createIngestionRouter({ queues }: Dependencies) {
     }
   });
 
-  router.post("/dependencies", async (req, res, next) => {
+  router.post("/dependencies", requireIngestKey, async (req, res, next) => {
     try {
       const payload = dependencyBatchSchema.parse(req.body);
       await queues.dependencies.add(payload.batchId, payload, {

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { createDashboardRouter } from "./dashboard.router.js";
 import { createOperationsRouter } from "./operations.router.js";
 import { realtime } from "./realtime.js";
+import { shouldWarnAboutDefaultIngestSecret } from "./telemetry/ingest-auth.js";
 import { createIngestionRouter } from "./telemetry/ingestion.router.js";
 import { startTelemetryProcessors } from "./telemetry/telemetry.processor.js";
 import { createTelemetryQueues } from "./telemetry/telemetry.queues.js";
@@ -17,7 +18,8 @@ const envSchema = z.object({
   NODE_ENV: z.string().default("development"),
   PORT: z.coerce.number().default(4000),
   FRONTEND_ORIGIN: z.string().default("http://localhost:5173,http://127.0.0.1:5173"),
-  REDIS_URL: z.string().default("redis://localhost:6379")
+  REDIS_URL: z.string().default("redis://localhost:6379"),
+  AGENT_INGEST_SECRET: z.string().optional()
 });
 
 const env = envSchema.parse(process.env);
@@ -47,7 +49,11 @@ app.get("/api/v1/health", (_req, res) => {
   });
 });
 
-app.use("/api/v1/ingest", createIngestionRouter({ queues }));
+if (shouldWarnAboutDefaultIngestSecret(env.AGENT_INGEST_SECRET)) {
+  console.warn("AGENT_INGEST_SECRET is using the default development placeholder.");
+}
+
+app.use("/api/v1/ingest", createIngestionRouter({ agentSecret: env.AGENT_INGEST_SECRET, queues }));
 app.use("/api/v1/dashboard", createDashboardRouter());
 app.use("/api/v1", createOperationsRouter());
 
