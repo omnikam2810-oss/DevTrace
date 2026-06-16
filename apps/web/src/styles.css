@@ -174,6 +174,10 @@ p {
   padding: 0 13px;
 }
 
+.demoButton.secondary {
+  background: #0f1720;
+}
+
 .iconButton:hover,
 .demoButton:hover {
   background: #203047;
@@ -182,6 +186,47 @@ p {
 .demoButton:disabled {
   cursor: wait;
   opacity: 0.7;
+}
+
+.onboarding {
+  border: 1px solid #1f2a38;
+  background: #111923;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.8fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.eyebrow {
+  color: #38bdf8;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.setupSteps {
+  display: grid;
+  gap: 8px;
+}
+
+.setupSteps span {
+  border: 1px solid #263448;
+  background: #0f1720;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #b7c7dc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.onboardingActions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .kpis {
@@ -638,6 +683,7 @@ td {
   .grid,
   .tables,
   .topologyLayout,
+  .onboarding,
   .sourceCards,
   .sourcePanels {
     grid-template-columns: 1fr;

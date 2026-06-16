@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -34,13 +35,13 @@ export function createOperationsRouter() {
     res.json([
       {
         id: "demo",
-        name: "Demo Data",
+        name: "Sample Data",
         description: "Populate DevTrace with realistic sample telemetry in one click.",
         status: "ready"
       },
       {
         id: "agent",
-        name: "Node Agent",
+        name: "Connect Application",
         description: "Use one setup command to monitor a Node service.",
         status: "guide"
       },
@@ -91,6 +92,14 @@ export function createOperationsRouter() {
       const rows = parseCsv(body.csv);
       const result = await importCsvRows(body.type, rows);
       res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/demo/seed", async (_req, res, next) => {
+    try {
+      res.status(201).json(await seedDemoWorkspace());
     } catch (error) {
       next(error);
     }
@@ -723,6 +732,247 @@ export function createOperationsRouter() {
   });
 
   return router;
+}
+
+async function seedDemoWorkspace() {
+  const project = await ensureDefaultProject();
+  const now = Date.now();
+  const batchId = randomUUID();
+  const requests = 120 + Math.floor(Math.random() * 90);
+  const errors = 7 + Math.floor(Math.random() * 9);
+  const traceId = randomUUID();
+  const checkoutSpanId = randomUUID();
+  const databaseSpanId = randomUUID();
+
+  const checkout = await prisma.service.upsert({
+    where: {
+      projectId_name_environment: {
+        projectId: project.id,
+        name: "checkout-api",
+        environment: "PRODUCTION"
+      }
+    },
+    update: {
+      version: "1.4.2",
+      owner: "Commerce",
+      status: "DEGRADED",
+      healthScore: 64,
+      lastSeenAt: new Date()
+    },
+    create: {
+      projectId: project.id,
+      name: "checkout-api",
+      environment: "PRODUCTION",
+      version: "1.4.2",
+      owner: "Commerce",
+      status: "DEGRADED",
+      healthScore: 64,
+      lastSeenAt: new Date()
+    }
+  });
+
+  const payments = await prisma.service.upsert({
+    where: {
+      projectId_name_environment: {
+        projectId: project.id,
+        name: "payments-db",
+        environment: "PRODUCTION"
+      }
+    },
+    update: {
+      version: "16",
+      owner: "Platform",
+      status: "WARNING",
+      healthScore: 78,
+      lastSeenAt: new Date()
+    },
+    create: {
+      projectId: project.id,
+      name: "payments-db",
+      environment: "PRODUCTION",
+      version: "16",
+      owner: "Platform",
+      status: "WARNING",
+      healthScore: 78,
+      lastSeenAt: new Date()
+    }
+  });
+
+  await prisma.serviceMetric.createMany({
+    data: Array.from({ length: 8 }, (_, index) => ({
+      serviceId: checkout.id,
+      timestamp: new Date(now - (7 - index) * 60_000),
+      cpuPercent: 54 + index * 4,
+      memoryPercent: 62 + index * 3,
+      requestCount: requests + index * 5,
+      errorCount: errors,
+      avgLatencyMs: 180 + index * 58,
+      p95LatencyMs: 420 + index * 70,
+      throughputRpm: 340 + index * 20,
+      statusCodes: { "200": requests, "500": errors }
+    }))
+  });
+
+  await prisma.logEvent.createMany({
+    data: [
+      {
+        serviceId: checkout.id,
+        timestamp: new Date(now - 90_000),
+        level: "WARN",
+        message: "Checkout latency crossed the warning threshold",
+        traceId,
+        spanId: checkoutSpanId,
+        attributes: { source: "demo-seed", batchId }
+      },
+      {
+        serviceId: checkout.id,
+        timestamp: new Date(now - 30_000),
+        level: "ERROR",
+        message: "Payment authorization timed out",
+        traceId,
+        spanId: databaseSpanId,
+        attributes: { source: "demo-seed", dependency: payments.name }
+      }
+    ]
+  });
+
+  await prisma.trace.upsert({
+    where: { id: traceId },
+    update: {
+      durationMs: 742,
+      status: "ERROR"
+    },
+    create: {
+      id: traceId,
+      projectId: project.id,
+      rootService: checkout.name,
+      startedAt: new Date(now - 45_000),
+      durationMs: 742,
+      status: "ERROR"
+    }
+  });
+
+  await prisma.span.upsert({
+    where: { id: checkoutSpanId },
+    update: {
+      durationMs: 742,
+      status: "ERROR",
+      attributes: { route: "/checkout", source: "demo-seed" }
+    },
+    create: {
+      id: checkoutSpanId,
+      traceId,
+      serviceId: checkout.id,
+      name: "POST /checkout",
+      kind: "SERVER",
+      startedAt: new Date(now - 45_000),
+      durationMs: 742,
+      status: "ERROR",
+      attributes: { route: "/checkout", source: "demo-seed" }
+    }
+  });
+
+  await prisma.span.upsert({
+    where: { id: databaseSpanId },
+    update: {
+      durationMs: 518,
+      status: "TIMEOUT",
+      attributes: { query: "authorize_payment", source: "demo-seed" }
+    },
+    create: {
+      id: databaseSpanId,
+      traceId,
+      parentSpanId: checkoutSpanId,
+      serviceId: payments.id,
+      name: "authorize_payment",
+      kind: "CLIENT",
+      startedAt: new Date(now - 44_600),
+      durationMs: 518,
+      status: "TIMEOUT",
+      attributes: { query: "authorize_payment", source: "demo-seed" }
+    }
+  });
+
+  await prisma.serviceDependency.upsert({
+    where: {
+      sourceServiceId_targetServiceId_endpoint: {
+        sourceServiceId: checkout.id,
+        targetServiceId: payments.id,
+        endpoint: "payments-db:5432"
+      }
+    },
+    update: {
+      protocol: "postgres",
+      callCount: { increment: requests },
+      errorRate: errors / requests,
+      avgLatencyMs: 286,
+      lastSeenAt: new Date()
+    },
+    create: {
+      sourceServiceId: checkout.id,
+      targetServiceId: payments.id,
+      protocol: "postgres",
+      endpoint: "payments-db:5432",
+      callCount: requests,
+      errorRate: errors / requests,
+      avgLatencyMs: 286
+    }
+  });
+
+  const alert = await prisma.alert.create({
+    data: {
+      serviceId: checkout.id,
+      title: "Checkout payment errors are elevated",
+      description: `Payment error rate is ${((errors / requests) * 100).toFixed(1)}%.`,
+      severity: "CRITICAL",
+      metadata: {
+        source: "demo-seed",
+        requestCount: requests,
+        errorCount: errors,
+        traceId
+      }
+    }
+  });
+
+  const incident = await prisma.incident.create({
+    data: {
+      projectId: project.id,
+      title: "Checkout reliability regression",
+      description: "Checkout requests are slower and payment authorization is timing out.",
+      severity: "CRITICAL",
+      state: "INVESTIGATING",
+      impactedServices: [checkout.name, payments.name],
+      timeline: [
+        { at: new Date(now - 120_000).toISOString(), event: "Latency warning started" },
+        { at: new Date(now - 60_000).toISOString(), event: "Payment timeouts detected" },
+        { at: new Date(now).toISOString(), event: `Alert ${alert.id} opened` }
+      ],
+      alerts: {
+        connect: { id: alert.id }
+      }
+    }
+  });
+
+  const deployment = await createDeployment({
+    serviceName: checkout.name,
+    environment: "PRODUCTION",
+    version: "1.4.2",
+    commitSha: randomUUID().slice(0, 8),
+    deployedBy: "demo-seed",
+    metadata: { source: "demo-seed", batchId }
+  });
+
+  return {
+    services: 2,
+    metrics: 8,
+    logs: 2,
+    traces: 1,
+    dependencies: 1,
+    alerts: 1,
+    incidents: 1,
+    deployment,
+    incidentId: incident.id
+  };
 }
 
 function toJson(value: Record<string, unknown> | undefined): Prisma.InputJsonObject | undefined {

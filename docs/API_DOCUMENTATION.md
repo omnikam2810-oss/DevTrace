@@ -4,7 +4,7 @@ Base path: `/api/v1`
 
 All authenticated requests use `Authorization: Bearer <access_token>`. Agent ingest requests use `X-DevTrace-Key: <api_key>`.
 
-Local development currently runs in no-auth mode so the observability workflows can be used before identity is added.
+Local development keeps dashboard routes open, while agent ingest requests require `X-DevTrace-Key` from `AGENT_INGEST_SECRET` or a stored API key.
 
 ## Authentication
 

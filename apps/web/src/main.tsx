@@ -35,7 +35,7 @@ import {
 import "./styles.css";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
-const navItems = ["Overview", "Sources", "Services", "Deployments", "Logs", "Traces", "Topology", "Alerts", "Incidents", "Reports"] as const;
+const navItems = ["Overview", "Data Setup", "Services", "Deployments", "Logs", "Request Traces", "Service Map", "Alerts", "Incidents", "Reliability Reports"] as const;
 type View = typeof navItems[number];
 
 type DashboardSummary = {
@@ -289,15 +289,14 @@ function App() {
 
   const sendDemoTelemetry = async () => {
     setIsSendingDemo(true);
-    setMessage("Sending demo telemetry");
+    setMessage("Loading sample data");
     try {
-      await sendDemoBatch();
-      await wait(900);
+      await api("/api/v1/demo/seed", { method: "POST" });
       await loadAll();
-      setMessage("Demo telemetry ingested");
+      setMessage("Sample workspace ready");
     } catch (error) {
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "Unable to send demo telemetry");
+      setMessage(error instanceof Error ? error.message : "Unable to load sample data");
     } finally {
       setIsSendingDemo(false);
     }
@@ -343,19 +342,28 @@ function App() {
         <header className="topbar">
           <div>
             <h1>{activeView}</h1>
-            <p>Default Project / Production / No-auth local mode</p>
+            <p>Default Project / Production / Local workspace</p>
           </div>
           <div className="actions">
             <div className={`connection ${status}`}>{message}</div>
             <button className="iconButton" onClick={() => void loadAll()} title="Refresh dashboard"><RefreshCw size={18} /></button>
             <button className="demoButton" onClick={() => void sendDemoTelemetry()} disabled={isSendingDemo}>
-              <Play size={17} /> {isSendingDemo ? "Sending" : "Demo"}
+              <Play size={17} /> {isSendingDemo ? "Loading" : "Sample Data"}
             </button>
           </div>
         </header>
 
-        {activeView === "Overview" && <Overview summary={summary} chartSeries={chartSeries} onOpenService={(id) => void openServiceDetail(id)} />}
-        {activeView === "Sources" && (
+        {activeView === "Overview" && (
+          <Overview
+            summary={summary}
+            chartSeries={chartSeries}
+            onDemo={() => void sendDemoTelemetry()}
+            onOpenSetup={() => setActiveView("Data Setup")}
+            onOpenService={(id) => void openServiceDetail(id)}
+            isSendingDemo={isSendingDemo}
+          />
+        )}
+        {activeView === "Data Setup" && (
           <Sources
             sources={sources}
             onDemo={() => void sendDemoTelemetry()}
@@ -384,8 +392,8 @@ function App() {
         {activeView === "Logs" && (
           <Logs logs={logs} level={logLevel} query={logQuery} onLevel={setLogLevel} onQuery={setLogQuery} onSearch={() => void loadAll()} />
         )}
-        {activeView === "Traces" && <Traces traces={traces} />}
-        {activeView === "Topology" && <TopologyView topology={topology} />}
+        {activeView === "Request Traces" && <Traces traces={traces} />}
+        {activeView === "Service Map" && <TopologyView topology={topology} />}
         {activeView === "Alerts" && <Alerts alerts={alerts} onChange={loadAll} />}
         {activeView === "Incidents" && (
           <Incidents
@@ -400,20 +408,45 @@ function App() {
             }}
           />
         )}
-        {activeView === "Reports" && <Reports reports={reports} onCreate={() => void createReport()} />}
+        {activeView === "Reliability Reports" && <Reports reports={reports} onCreate={() => void createReport()} />}
       </section>
     </main>
   );
 }
 
-function Overview({ summary, chartSeries, onOpenService }: {
+function Overview({ summary, chartSeries, onDemo, onOpenSetup, onOpenService, isSendingDemo }: {
   summary: DashboardSummary;
   chartSeries: ChartPoint[];
+  onDemo: () => void;
+  onOpenSetup: () => void;
   onOpenService: (serviceId: string) => void;
+  isSendingDemo: boolean;
 }) {
   const hasTelemetry = summary.services.length > 0 || summary.series.length > 0;
   return (
     <>
+      {!hasTelemetry && (
+        <section className="onboarding">
+          <div>
+            <span className="eyebrow">First run</span>
+            <h2>Start with a guided workspace</h2>
+            <p>Load a realistic sample or connect the first application when the client is ready.</p>
+          </div>
+          <div className="setupSteps">
+            <span><ShieldCheck size={16} /> Project ready</span>
+            <span><Play size={16} /> Sample data</span>
+            <span><Server size={16} /> Agent setup</span>
+          </div>
+          <div className="onboardingActions">
+            <button className="demoButton" onClick={onDemo} disabled={isSendingDemo}>
+              <Play size={17} /> {isSendingDemo ? "Loading" : "Load Sample"}
+            </button>
+            <button className="demoButton secondary" onClick={onOpenSetup}>
+              <Rocket size={17} /> Connect App
+            </button>
+          </div>
+        </section>
+      )}
       <div className="search"><Search size={18} /><span>service:error latency status</span></div>
       <section className="kpis">
         <Metric icon={<ShieldCheck />} label="Health Score" value={String(summary.kpis.healthScore)} tone="good" />
@@ -422,7 +455,7 @@ function Overview({ summary, chartSeries, onOpenService }: {
         <Metric icon={<Activity />} label="Error Rate" value={`${summary.kpis.errorRate}%`} tone="bad" />
         <Metric icon={<Siren />} label="Active Incidents" value={String(summary.kpis.activeIncidents)} tone="warn" />
       </section>
-      {!hasTelemetry && <EmptyState title="No telemetry stored yet" text="Click Demo to exercise API, Redis workers, Postgres storage, and realtime refresh." />}
+      {!hasTelemetry && <EmptyState title="No telemetry yet" text="Load sample data or connect an application to populate this workspace." />}
       <section className="grid">
         <Panel title="Resource Pressure">
           <ResponsiveContainer width="100%" height={220}>
@@ -521,14 +554,14 @@ function Sources({ sources, onDemo, onRefresh }: {
       </div>
 
       <section className="sourcePanels">
-        <Panel title="Demo Data">
+        <Panel title="Sample Data">
           <div className="sourceAction">
             <p>Populate the dashboard with realistic metrics, logs, traces, dependencies, alerts, incidents, and deployments.</p>
-            <button className="demoButton" onClick={onDemo}><Play size={17} /> Run Demo</button>
+            <button className="demoButton" onClick={onDemo}><Play size={17} /> Load Sample</button>
           </div>
         </Panel>
 
-        <Panel title="Node Agent">
+        <Panel title="Connect Application">
           <div className="sourceAction">
             <p>Use this guided setup when a technical user can run one command in the app they want to monitor.</p>
             <button className="demoButton" onClick={() => void loadAgentSetup()}><Copy size={17} /> Generate</button>
@@ -1169,111 +1202,9 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function sendDemoBatch() {
-  const now = Date.now();
-  const batchId = crypto.randomUUID();
-  const service = { name: "checkout-api", environment: "PRODUCTION", version: "1.0.0" };
-  const dependency = { name: "payments-db", environment: "PRODUCTION", version: "16" };
-  const requests = 90 + Math.floor(Math.random() * 80);
-  const errors = Math.floor(Math.random() * 12);
-  const traceId = crypto.randomUUID();
-  const spanId = crypto.randomUUID();
-
-  const responses = await Promise.all([
-    fetch(`${apiBaseUrl}/api/v1/ingest/metrics`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        service,
-        batchId: `${batchId}-metrics`,
-        metrics: Array.from({ length: 6 }, (_, index) => ({
-          timestamp: new Date(now - (5 - index) * 60_000).toISOString(),
-          cpuPercent: 45 + Math.round(Math.random() * 45),
-          memoryPercent: 52 + Math.round(Math.random() * 32),
-          requestCount: requests + index * 3,
-          errorCount: errors,
-          avgLatencyMs: 120 + Math.round(Math.random() * 620),
-          throughputRpm: 320 + Math.round(Math.random() * 160)
-        }))
-      })
-    }),
-    fetch(`${apiBaseUrl}/api/v1/ingest/logs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        service,
-        batchId: `${batchId}-logs`,
-        logs: [{
-          timestamp: new Date(now).toISOString(),
-          level: errors > 6 ? "ERROR" : errors > 3 ? "WARN" : "INFO",
-          message: errors > 6 ? "Payment authorization failed" : errors > 3 ? "Checkout latency elevated" : "Checkout service processed traffic",
-          traceId,
-          spanId,
-          attributes: { source: "demo", requests, errors }
-        }]
-      })
-    }),
-    fetch(`${apiBaseUrl}/api/v1/ingest/traces`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        service,
-        batchId: `${batchId}-traces`,
-        spans: [{
-          traceId,
-          spanId,
-          name: "POST /checkout",
-          kind: "SERVER",
-          startedAt: new Date(now - 250).toISOString(),
-          durationMs: 180 + Math.round(Math.random() * 420),
-          status: errors > 8 ? "ERROR" : "OK",
-          attributes: { route: "/checkout", source: "demo" }
-        }]
-      })
-    }),
-    fetch(`${apiBaseUrl}/api/v1/ingest/dependencies`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        service,
-        batchId: `${batchId}-dependencies`,
-        dependencies: [{
-          target: dependency,
-          protocol: "postgres",
-          endpoint: "payments-db:5432",
-          callCount: requests,
-          errorRate: requests > 0 ? errors / requests : 0,
-          avgLatencyMs: 80 + Math.round(Math.random() * 260)
-        }]
-      })
-    }),
-    fetch(`${apiBaseUrl}/api/v1/deployments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        serviceName: service.name,
-        environment: service.environment,
-        version: service.version,
-        commitSha: crypto.randomUUID().slice(0, 8),
-        deployedBy: "dashboard-demo",
-        metadata: { source: "demo", batchId }
-      })
-    })
-  ]);
-
-  const failed = responses.find((response) => !response.ok);
-  if (failed) {
-    throw new Error(`Demo ingest failed with ${failed.status}`);
-  }
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 const fallbackSources: SourceOption[] = [
-  { id: "demo", name: "Demo Data", description: "Populate DevTrace with sample telemetry.", status: "ready" },
-  { id: "agent", name: "Node Agent", description: "Generate a one-command setup guide.", status: "guide" },
+  { id: "demo", name: "Sample Data", description: "Populate DevTrace with sample telemetry.", status: "ready" },
+  { id: "agent", name: "Connect Application", description: "Generate a one-command setup guide.", status: "guide" },
   { id: "webhook", name: "Webhook", description: "Record deployments from external tools.", status: "ready" },
   { id: "csv", name: "CSV Import", description: "Import spreadsheet data.", status: "ready" }
 ];
