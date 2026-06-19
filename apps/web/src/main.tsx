@@ -133,6 +133,10 @@ type SourceOption = {
   description: string;
   status: string;
 };
+type ApiErrorPayload = {
+  error?: string;
+  message?: string;
+};
 type ServiceDependencyRow = {
   id: string;
   service: string;
@@ -303,24 +307,40 @@ function App() {
   };
 
   const createReport = async () => {
-    await api<ReportRow>("/api/v1/reports", { method: "POST" });
-    await loadAll();
+    try {
+      setMessage("Generating reliability report");
+      await api<ReportRow>("/api/v1/reports", { method: "POST" });
+      await loadAll();
+      setStatus("ready");
+      setMessage("Reliability report generated");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "Unable to generate report");
+    }
   };
 
   const createDemoDeployment = async () => {
-    await api<DeploymentRow>("/api/v1/deployments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        serviceName: "checkout-api",
-        environment: "PRODUCTION",
-        version: `1.${Math.floor(Math.random() * 9) + 1}.${Math.floor(Math.random() * 20)}`,
-        commitSha: crypto.randomUUID().slice(0, 8),
-        deployedBy: "local-demo",
-        metadata: { source: "dashboard-demo" }
-      })
-    });
-    await loadAll();
+    try {
+      setMessage("Recording demo deployment");
+      await api<DeploymentRow>("/api/v1/deployments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceName: "checkout-api",
+          environment: "PRODUCTION",
+          version: `1.${Math.floor(Math.random() * 9) + 1}.${Math.floor(Math.random() * 20)}`,
+          commitSha: crypto.randomUUID().slice(0, 8),
+          deployedBy: "local-demo",
+          metadata: { source: "dashboard-demo" }
+        })
+      });
+      await loadAll();
+      setStatus("ready");
+      setMessage("Deployment recorded");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "Unable to record deployment");
+    }
   };
 
   const chartSeries = useMemo(() => summary.series.length > 0 ? summary.series : [
@@ -346,12 +366,20 @@ function App() {
           </div>
           <div className="actions">
             <div className={`connection ${status}`}>{message}</div>
-            <button className="iconButton" onClick={() => void loadAll()} title="Refresh dashboard"><RefreshCw size={18} /></button>
+            <button className="iconButton" onClick={() => void loadAll()} title="Refresh dashboard" aria-label="Refresh dashboard"><RefreshCw size={18} /></button>
             <button className="demoButton" onClick={() => void sendDemoTelemetry()} disabled={isSendingDemo}>
               <Play size={17} /> {isSendingDemo ? "Loading" : "Sample Data"}
             </button>
           </div>
         </header>
+
+        {status === "error" && (
+          <section className="errorBanner">
+            <AlertTriangle size={18} />
+            <span>{message}</span>
+            <button className="demoButton secondary" onClick={() => void loadAll()}>Retry</button>
+          </section>
+        )}
 
         {activeView === "Overview" && (
           <Overview
@@ -447,7 +475,7 @@ function Overview({ summary, chartSeries, onDemo, onOpenSetup, onOpenService, is
           </div>
         </section>
       )}
-      <div className="search"><Search size={18} /><span>service:error latency status</span></div>
+      <div className="search"><Search size={18} /><span>Use the navigation to inspect services, logs, traces, incidents, and reports.</span></div>
       <section className="kpis">
         <Metric icon={<ShieldCheck />} label="Health Score" value={String(summary.kpis.healthScore)} tone="good" />
         <Metric icon={<Server />} label="Services" value={String(summary.kpis.services)} tone="neutral" />
@@ -506,36 +534,66 @@ function Sources({ sources, onDemo, onRefresh }: {
   const [csvType, setCsvType] = useState("services");
   const [csvText, setCsvText] = useState(sampleCsv.services);
   const [importResult, setImportResult] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [isWorking, setIsWorking] = useState(false);
 
   const loadAgentSetup = async () => {
-    setAgentSetup(await api<{ command: string; steps: string[] }>("/api/v1/sources/agent/setup"));
+    try {
+      setIsWorking(true);
+      setActionMessage("");
+      setAgentSetup(await api<{ command: string; steps: string[] }>("/api/v1/sources/agent/setup"));
+      setActionMessage("Agent setup guide is ready.");
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "Unable to generate agent setup");
+    } finally {
+      setIsWorking(false);
+    }
   };
 
   const sendWebhookDeployment = async () => {
-    const deployment = await api<DeploymentRow>("/api/v1/sources/webhook/deployment", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        serviceName: "checkout-api",
-        environment: "PRODUCTION",
-        version: `2.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 20)}`,
-        commitSha: crypto.randomUUID().slice(0, 8),
-        deployedBy: "webhook-demo",
-        metadata: { source: "sources-page" }
-      })
-    });
-    setWebhookResult(`Recorded ${deployment.service} ${deployment.version}`);
-    onRefresh();
+    try {
+      setIsWorking(true);
+      setActionMessage("");
+      const deployment = await api<DeploymentRow>("/api/v1/sources/webhook/deployment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceName: "checkout-api",
+          environment: "PRODUCTION",
+          version: `2.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 20)}`,
+          commitSha: crypto.randomUUID().slice(0, 8),
+          deployedBy: "webhook-demo",
+          metadata: { source: "sources-page" }
+        })
+      });
+      setWebhookResult(`Recorded ${deployment.service} ${deployment.version}`);
+      setActionMessage("Deployment sample was recorded.");
+      onRefresh();
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "Unable to record deployment sample");
+    } finally {
+      setIsWorking(false);
+    }
   };
 
   const importCsv = async () => {
-    const result = await api<{ type: string; imported: number }>("/api/v1/sources/csv/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: csvType, csv: csvText })
-    });
-    setImportResult(`Imported ${result.imported} ${result.type} rows`);
-    onRefresh();
+    try {
+      setIsWorking(true);
+      setActionMessage("");
+      const result = await api<{ type: string; imported: number }>("/api/v1/sources/csv/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: csvType, csv: csvText })
+      });
+      setImportResult(`Imported ${result.imported} ${result.type} rows`);
+      setActionMessage("CSV import finished.");
+      onRefresh();
+    } catch (error) {
+      setImportResult("");
+      setActionMessage(error instanceof Error ? error.message : "Unable to import CSV");
+    } finally {
+      setIsWorking(false);
+    }
   };
 
   return (
@@ -553,6 +611,8 @@ function Sources({ sources, onDemo, onRefresh }: {
         ))}
       </div>
 
+      {actionMessage && <div className="actionNotice">{actionMessage}</div>}
+
       <section className="sourcePanels">
         <Panel title="Sample Data">
           <div className="sourceAction">
@@ -564,7 +624,7 @@ function Sources({ sources, onDemo, onRefresh }: {
         <Panel title="Connect Application">
           <div className="sourceAction">
             <p>Use this guided setup when a technical user can run one command in the app they want to monitor.</p>
-            <button className="demoButton" onClick={() => void loadAgentSetup()}><Copy size={17} /> Generate</button>
+            <button className="demoButton" onClick={() => void loadAgentSetup()} disabled={isWorking}><Copy size={17} /> Generate</button>
           </div>
           {agentSetup && (
             <div className="commandBlock">
@@ -577,7 +637,7 @@ function Sources({ sources, onDemo, onRefresh }: {
         <Panel title="Deployment Webhook">
           <div className="sourceAction">
             <p>Use this input for CI/CD tools. Any tool that can send JSON can record a deployment.</p>
-            <button className="demoButton" onClick={() => void sendWebhookDeployment()}><Send size={17} /> Send Sample</button>
+            <button className="demoButton" onClick={() => void sendWebhookDeployment()} disabled={isWorking}><Send size={17} /> Send Sample</button>
           </div>
           <div className="commandBlock">
             <code>POST http://localhost:4000/api/v1/sources/webhook/deployment</code>
@@ -600,7 +660,7 @@ function Sources({ sources, onDemo, onRefresh }: {
               <option value="logs">Logs</option>
               <option value="metrics">Metrics</option>
             </select>
-            <button className="demoButton" onClick={() => void importCsv()}><Database size={17} /> Import</button>
+            <button className="demoButton" onClick={() => void importCsv()} disabled={isWorking || !csvText.trim()}><Database size={17} /> Import</button>
           </div>
           <textarea className="csvInput" value={csvText} onChange={(event) => setCsvText(event.target.value)} />
           {importResult && <p>{importResult}</p>}
@@ -1195,11 +1255,27 @@ function toQuery(params: Record<string, string>) {
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, init);
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, init);
+  } catch {
+    throw new Error(`DevTrace API is not reachable at ${apiBaseUrl}. Start the API with npm run dev and try again.`);
+  }
+
   if (!response.ok) {
-    throw new Error(`${path} failed with ${response.status}`);
+    const payload = await readErrorPayload(response);
+    const detail = payload?.error ?? payload?.message;
+    throw new Error(detail ? `${detail}` : `Request failed with status ${response.status}. Please try again.`);
   }
   return response.json() as Promise<T>;
+}
+
+async function readErrorPayload(response: Response) {
+  try {
+    return await response.json() as ApiErrorPayload;
+  } catch {
+    return null;
+  }
 }
 
 const fallbackSources: SourceOption[] = [

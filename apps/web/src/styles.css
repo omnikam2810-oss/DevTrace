@@ -124,6 +124,29 @@ p {
   margin-bottom: 12px;
 }
 
+.errorBanner,
+.actionNotice {
+  border: 1px solid #7f1d1d;
+  background: #2a1114;
+  color: #fecaca;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.errorBanner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.actionNotice {
+  border-color: #263448;
+  background: #111923;
+  color: #b7c7dc;
+}
+
 .actions {
   display: flex;
   align-items: center;
@@ -676,7 +699,29 @@ td {
   }
 
   .sidebar {
-    display: none;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-right: 0;
+    border-bottom: 1px solid #1f2a38;
+    padding: 12px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .brand {
+    margin-bottom: 10px;
+  }
+
+  .nav {
+    width: auto;
+    display: inline-flex;
+    margin-right: 4px;
+    margin-bottom: 0;
+  }
+
+  .workspace {
+    padding: 14px;
   }
 
   .topbar,
@@ -711,6 +756,10 @@ td {
   }
 
   .detailHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .errorBanner {
     grid-template-columns: 1fr;
   }
 }
