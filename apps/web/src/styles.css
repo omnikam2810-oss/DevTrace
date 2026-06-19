@@ -252,6 +252,241 @@ p {
   gap: 8px;
 }
 
+.landing {
+  display: grid;
+  gap: 14px;
+}
+
+.landingHero {
+  min-height: 470px;
+  border: 1px solid #1f2a38;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  background:
+    linear-gradient(90deg, rgba(11, 16, 22, 0.96), rgba(11, 16, 22, 0.7), rgba(11, 16, 22, 0.18)),
+    #101923;
+  display: grid;
+  align-items: center;
+  padding: 46px;
+}
+
+.heroBackdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center end;
+  padding: 30px;
+  opacity: 0.92;
+}
+
+.heroPreview {
+  width: min(620px, 54vw);
+  min-height: 360px;
+  border: 1px solid #2b3a4f;
+  border-radius: 8px;
+  background: #111923;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+  transform: rotate(-2deg);
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.previewTop {
+  border-bottom: 1px solid #243142;
+  padding: 14px;
+  display: flex;
+  gap: 7px;
+}
+
+.previewTop span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #64748b;
+}
+
+.previewGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px;
+}
+
+.previewMetric,
+.previewChart {
+  border: 1px solid #243142;
+  border-radius: 8px;
+  background: #0f1720;
+}
+
+.previewMetric {
+  min-height: 116px;
+  padding: 14px;
+  display: grid;
+  align-content: space-between;
+}
+
+.previewMetric small {
+  color: #9fb1c7;
+}
+
+.previewMetric strong {
+  font-size: 38px;
+}
+
+.previewMetric.good strong {
+  color: #22c55e;
+}
+
+.previewMetric.warn strong {
+  color: #f59e0b;
+}
+
+.previewMetric.info strong {
+  color: #38bdf8;
+}
+
+.previewChart {
+  grid-column: 1 / -1;
+  min-height: 170px;
+  padding: 18px;
+  display: flex;
+  align-items: end;
+  gap: 13px;
+}
+
+.previewChart span {
+  flex: 1;
+  min-height: 24px;
+  border-radius: 6px 6px 0 0;
+  background: #38bdf8;
+}
+
+.previewChart span:nth-child(2n) {
+  background: #22c55e;
+}
+
+.previewChart span:nth-child(3n) {
+  background: #f59e0b;
+}
+
+.heroContent {
+  position: relative;
+  z-index: 1;
+  max-width: 710px;
+  display: grid;
+  gap: 18px;
+}
+
+.heroContent .eyebrow,
+.sectionIntro .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.heroContent h2 {
+  font-size: 48px;
+  line-height: 1.05;
+  margin: 0;
+  max-width: 760px;
+}
+
+.heroContent p {
+  max-width: 630px;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.landingStrip,
+.flowGrid,
+.featureBand {
+  display: grid;
+  gap: 12px;
+}
+
+.landingStrip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.landingStrip div,
+.flowStep {
+  border: 1px solid #1f2a38;
+  background: #111923;
+  border-radius: 8px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.landingStrip span,
+.flowStep p,
+.starterBlock p {
+  color: #9fb1c7;
+}
+
+.flowSection {
+  border: 1px solid #1f2a38;
+  background: #0f1720;
+  border-radius: 8px;
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.sectionIntro {
+  display: grid;
+  gap: 8px;
+}
+
+.sectionIntro h2 {
+  font-size: 24px;
+}
+
+.flowGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.flowStep {
+  align-content: start;
+}
+
+.flowStep strong {
+  font-size: 17px;
+}
+
+.featureBand {
+  grid-template-columns: 1fr 1fr;
+}
+
+.featureList,
+.starterBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.featureList span {
+  border: 1px solid #263448;
+  border-radius: 6px;
+  background: #0f1720;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #d8e3f2;
+}
+
+.starterBlock {
+  align-items: start;
+}
+
 .kpis {
   display: grid;
   grid-template-columns: repeat(5, minmax(150px, 1fr));
@@ -745,6 +980,9 @@ td {
   .tables,
   .topologyLayout,
   .onboarding,
+  .landingStrip,
+  .flowGrid,
+  .featureBand,
   .sourceCards,
   .sourcePanels {
     grid-template-columns: 1fr;
@@ -777,5 +1015,50 @@ td {
 
   .errorBanner {
     grid-template-columns: 1fr;
+  }
+
+  .landingHero {
+    min-height: auto;
+    padding: 28px 18px 230px;
+  }
+
+  .heroBackdrop {
+    place-items: end center;
+    padding: 18px;
+  }
+
+  .heroPreview {
+    width: 100%;
+    min-height: 200px;
+    transform: none;
+  }
+
+  .previewGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .previewMetric {
+    min-height: 72px;
+    padding: 9px;
+  }
+
+  .previewMetric strong {
+    font-size: 22px;
+  }
+
+  .previewChart {
+    min-height: 82px;
+    padding: 10px;
+    gap: 7px;
+  }
+
+  .heroContent h2 {
+    font-size: 34px;
+  }
+
+  .heroContent p {
+    font-size: 15px;
   }
 }
