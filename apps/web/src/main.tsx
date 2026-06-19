@@ -17,6 +17,7 @@ import {
   Send,
   Search,
   Server,
+  Sparkles,
   ShieldCheck,
   Siren,
   Waypoints
@@ -35,7 +36,7 @@ import {
 import "./styles.css";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
-const navItems = ["Overview", "Data Setup", "Services", "Deployments", "Logs", "Request Traces", "Service Map", "Alerts", "Incidents", "Reliability Reports"] as const;
+const navItems = ["Home", "Overview", "Data Setup", "Services", "Deployments", "Logs", "Request Traces", "Service Map", "Alerts", "Incidents", "Reliability Reports"] as const;
 type View = typeof navItems[number];
 
 type DashboardSummary = {
@@ -177,7 +178,7 @@ const emptySummary: DashboardSummary = {
 };
 
 function App() {
-  const [activeView, setActiveView] = useState<View>("Overview");
+  const [activeView, setActiveView] = useState<View>("Home");
   const [summary, setSummary] = useState<DashboardSummary>(emptySummary);
   const [services, setServices] = useState<ServiceRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
@@ -362,7 +363,7 @@ function App() {
         <header className="topbar">
           <div>
             <h1>{activeView}</h1>
-            <p>Default Project / Production / Local workspace</p>
+            <p>{activeView === "Home" ? "Understand the product before opening the console" : "Default Project / Production / Local workspace"}</p>
           </div>
           <div className="actions">
             <div className={`connection ${status}`}>{message}</div>
@@ -381,6 +382,14 @@ function App() {
           </section>
         )}
 
+        {activeView === "Home" && (
+          <Landing
+            onOpenConsole={() => setActiveView("Overview")}
+            onOpenSetup={() => setActiveView("Data Setup")}
+            onDemo={() => void sendDemoTelemetry()}
+            isSendingDemo={isSendingDemo}
+          />
+        )}
         {activeView === "Overview" && (
           <Overview
             summary={summary}
@@ -439,6 +448,100 @@ function App() {
         {activeView === "Reliability Reports" && <Reports reports={reports} onCreate={() => void createReport()} />}
       </section>
     </main>
+  );
+}
+
+function Landing({ onOpenConsole, onOpenSetup, onDemo, isSendingDemo }: {
+  onOpenConsole: () => void;
+  onOpenSetup: () => void;
+  onDemo: () => void;
+  isSendingDemo: boolean;
+}) {
+  return (
+    <section className="landing">
+      <section className="landingHero">
+        <div className="heroBackdrop" aria-hidden="true">
+          <div className="heroPreview">
+            <div className="previewTop">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="previewGrid">
+              <div className="previewMetric good"><small>Health</small><strong>94</strong></div>
+              <div className="previewMetric warn"><small>Alerts</small><strong>3</strong></div>
+              <div className="previewMetric info"><small>Services</small><strong>12</strong></div>
+              <div className="previewChart">
+                {[42, 68, 50, 82, 56, 72, 46, 64].map((height, index) => (
+                  <span key={index} style={{ height: `${height}%` }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="heroContent">
+          <span className="eyebrow"><Sparkles size={14} /> Observability made readable</span>
+          <h2>DevTrace shows what is healthy, what changed, and where to investigate next.</h2>
+          <p>
+            Bring in telemetry from sample data, CSV, webhooks, or the Node agent. DevTrace turns it into service health,
+            logs, traces, topology, alerts, incidents, and reliability reports in one console.
+          </p>
+          <div className="heroActions">
+            <button className="demoButton" onClick={onOpenConsole}><Activity size={17} /> Open Console</button>
+            <button className="demoButton secondary" onClick={onOpenSetup}><Rocket size={17} /> Add Data</button>
+            <button className="demoButton secondary" onClick={onDemo} disabled={isSendingDemo}>
+              <Play size={17} /> {isSendingDemo ? "Loading" : "Load Sample"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="landingStrip">
+        <div><strong>No guesswork</strong><span>Status, errors, latency, and incidents are grouped around services.</span></div>
+        <div><strong>Multiple inputs</strong><span>Use CSV, webhook events, demo data, or the Node telemetry agent.</span></div>
+        <div><strong>Action-ready</strong><span>Move from alert to incident timeline without hunting through screens.</span></div>
+      </section>
+
+      <section className="flowSection">
+        <div className="sectionIntro">
+          <span className="eyebrow">How it works</span>
+          <h2>From raw signals to a clear operating view</h2>
+        </div>
+        <div className="flowGrid">
+          <FlowStep icon={<Database />} title="1. Add telemetry" text="Import CSV rows, send a deployment webhook, load sample data, or connect a Node app." />
+          <FlowStep icon={<RadioTower />} title="2. Process signals" text="The API accepts metrics, logs, traces, dependencies, and events, then workers persist and enrich them." />
+          <FlowStep icon={<Server />} title="3. Monitor services" text="Each service gets health, last-seen time, recent logs, traces, alerts, and deployment history." />
+          <FlowStep icon={<Siren />} title="4. Resolve incidents" text="Alerts and related evidence become incident timelines so teams can see what changed." />
+        </div>
+      </section>
+
+      <section className="featureBand">
+        <Panel title="What Users Can Do">
+          <div className="featureList">
+            <span><ShieldCheck size={16} /> Check service health at a glance</span>
+            <span><FileText size={16} /> Search logs and create reliability reports</span>
+            <span><GitBranch size={16} /> Connect deployments to incidents</span>
+            <span><Waypoints size={16} /> View dependencies between services</span>
+          </div>
+        </Panel>
+        <Panel title="Best First Step">
+          <div className="starterBlock">
+            <p>For a quick demo, load sample data. For real input, go to Data Setup and paste CSV for services, logs, metrics, deployments, or incidents.</p>
+            <button className="demoButton" onClick={onOpenSetup}><Rocket size={17} /> Go to Data Setup</button>
+          </div>
+        </Panel>
+      </section>
+    </section>
+  );
+}
+
+function FlowStep({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
+  return (
+    <article className="flowStep">
+      <div className="sourceIcon">{icon}</div>
+      <strong>{title}</strong>
+      <p>{text}</p>
+    </article>
   );
 }
 

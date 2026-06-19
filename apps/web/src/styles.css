@@ -346,6 +346,22 @@ p {
   font-size: 13px;
 }
 
+.serviceTile .pill {
+  justify-self: start;
+  width: auto;
+  color: #0b1016;
+  font-weight: 700;
+}
+
+.serviceTile .pill.critical,
+.serviceTile .pill.degraded,
+.serviceTile .pill.error,
+.serviceTile .pill.offline,
+.serviceTile .pill.open,
+.serviceTile .pill.triggered {
+  color: #ffffff;
+}
+
 .serviceTile dl {
   display: grid;
   grid-template-columns: 1fr 1fr;
